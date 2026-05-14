@@ -1,0 +1,37 @@
+{
+    "name": "@payngo/sdk",
+    "version": "0.1.0",
+    "description": "SDK for Pay'n Go — universal stablecoin payment links on Ethereum",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "tsc",
+        "test": "jest",
+        "dev": "tsc --watch",
+        "demo": "ts-node src/agent-demo.ts"
+    },
+    "keywords": [
+        "ethereum",
+        "stablecoin",
+        "payments",
+        "usdc",
+        "web3",
+        "ai-agent"
+    ],
+    "license": "MIT",
+    "dependencies": {
+        "dotenv": "^17.4.2",
+        "viem": "^2.0.0"
+    },
+    "devDependencies": {
+        "@types/jest": "^29.0.0",
+        "@types/node": "^20.0.0",
+        "jest": "^29.0.0",
+        "ts-jest": "^29.0.0",
+        "ts-node": "^10.0.0",
+        "typescript": "^5.0.0"
+    }
+}
