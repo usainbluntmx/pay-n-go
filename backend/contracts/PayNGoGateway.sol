@@ -17,10 +17,7 @@ contract PayNGoGateway is Ownable, ReentrancyGuard {
     uint256 public constant MAX_GAS_PRICE = 500 gwei;
     uint256 public constant MIN_DEPOSIT = 0.01 ether;
 
-    // EntryPoint oficial ERC-4337 en Ethereum Sepolia
-    address public constant ENTRY_POINT = 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789;
-
-    // ─── Estado ───────────────────────────────────────────────────
+        // ─── Estado ───────────────────────────────────────────────────
     address public usdcToken;
     address public payNGoRouter;
 
@@ -88,7 +85,6 @@ contract PayNGoGateway is Ownable, ReentrancyGuard {
     error GasLimitExceeded(uint256 gasUsed, uint256 maxGas);
     error InvalidPolicy();
     error TransferFailed();
-    error OnlyEntryPoint();
     error TxAlreadyProcessed(bytes32 txId);
 
     // ─── Constructor ──────────────────────────────────────────────
@@ -187,48 +183,51 @@ contract PayNGoGateway is Ownable, ReentrancyGuard {
         emit GasSponsored(txId, user, gasLimit, ethToSponsor, usdcToCharge);
     }
 
-    /// @notice Ejecuta un pago gasless — el usuario firma, el gateway paga el gas
-    /// @param user Dirección del usuario
-    /// @param recipient Receptor del pago
-    /// @param amount Monto en USDC
-    /// @param gasLimit Gas estimado para la tx
-    function executeGaslessPayment(
-        address user,
-        address recipient,
-        uint256 amount,
-        uint256 gasLimit
-    ) external nonReentrant returns (bytes32 txId) {
-        if (blacklistedUsers[user]) revert UserBlacklisted(user);
-        if (whitelistOnly && !whitelistedUsers[user]) revert UserNotWhitelisted(user);
-
-        SponsorPolicy memory policy = _getPolicyFor(user);
-        if (!policy.active) revert InvalidPolicy();
-        if (gasLimit > policy.maxGasPerTx) revert GasLimitExceeded(gasLimit, policy.maxGasPerTx);
-
-        // Transferir USDC del usuario al receptor
-        IERC20(usdcToken).safeTransferFrom(user, recipient, amount);
-
-        // Generar txId
-        txId = keccak256(abi.encodePacked(
-            user,
-            recipient,
-            amount,
-            block.timestamp,
-            _txCounter++
-        ));
-
-        // Registrar sponsorship (gas es gratis para el usuario)
-        sponsoredTxs[txId] = SponsoredTx({
-            user: user,
-            gasUsed: gasLimit,
-            usdcCharged: 0,
-            ethSponsored: 0,
-            timestamp: block.timestamp,
-            completed: true
-        });
-
-        emit GasSponsored(txId, user, gasLimit, 0, 0);
+    /// @notice Ejecuta un pago gasless
+/// @dev Puede ser llamado por el usuario directamente o por el Router
+/// @param user Dirección lógica del usuario (para registro y políticas)
+/// @param recipient Receptor del pago
+/// @param amount Monto en USDC
+/// @param gasLimit Gas estimado para la tx
+function executeGaslessPayment(
+    address user,
+    address recipient,
+    uint256 amount,
+    uint256 gasLimit
+) external nonReentrant returns (bytes32 txId) {
+    if (blacklistedUsers[user]) revert UserBlacklisted(user);
+    if (whitelistOnly && !whitelistedUsers[user] && !whitelistedUsers[msg.sender]) {
+        revert UserNotWhitelisted(user);
     }
+
+    SponsorPolicy memory policy = _getPolicyFor(user);
+    if (!policy.active) revert InvalidPolicy();
+    if (gasLimit > policy.maxGasPerTx) revert GasLimitExceeded(gasLimit, policy.maxGasPerTx);
+
+    // Siempre transferir desde msg.sender:
+    // - Si lo llama el usuario directamente: msg.sender = usuario (debe aprobar antes)
+    // - Si lo llama el Router: msg.sender = Router (ya tiene el USDC aprobado)
+    IERC20(usdcToken).safeTransferFrom(msg.sender, recipient, amount);
+
+    txId = keccak256(abi.encodePacked(
+        user,
+        recipient,
+        amount,
+        block.timestamp,
+        _txCounter++
+    ));
+
+    sponsoredTxs[txId] = SponsoredTx({
+        user: user,
+        gasUsed: gasLimit,
+        usdcCharged: 0,
+        ethSponsored: 0,
+        timestamp: block.timestamp,
+        completed: true
+    });
+
+    emit GasSponsored(txId, user, gasLimit, 0, 0);
+}
 
     // ─── Vistas ───────────────────────────────────────────────────
 

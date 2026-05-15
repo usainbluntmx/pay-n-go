@@ -12,8 +12,8 @@ export const CHAIN_IDS = {
 export const CONTRACT_ADDRESSES: Record<number, ContractAddresses> = {
     [CHAIN_IDS.ETHEREUM_SEPOLIA]: {
         payNGoLinks: "0x1e6DFDac949089a02e48aBcb63E7381A3D77bF29",
-        payNGoRouter: "0x43246220b9e7C3d4500c0f2B778C1C916a63a2FF",
-        payNGoGateway: "0xEa3D3FeB0619f281cA69b2884cE00585c7Be1710",
+        payNGoRouter: "0x52e5d621290F9941254d42F8AB905E3fAB32f6F1",
+        payNGoGateway: "0x4a0D7CfF4C09f656c352aa190645a96Bca25410D",
         usdc: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
     },
 };

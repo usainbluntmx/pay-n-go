@@ -92,16 +92,17 @@ describe("PayNGoRouter", () => {
     // ─── Quotes ───────────────────────────────────────────────────
 
     describe("getQuotes", () => {
-        it("retorna cotización para ruta directa", async () => {
-            const quotes = await router.getQuotes(
+        it("getBestRoute retorna (0,0) si no hay rutas activas", async () => {
+            await router.setRouteActive(1, false);
+
+            const [bestRouteId, bestAmountOut] = await router.getBestRoute(
                 await mockUSDC.getAddress(),
                 await mockUSDC.getAddress(),
                 TEN_USDC
             );
 
-            expect(quotes.length).to.be.gt(0);
-            expect(quotes[0].available).to.equal(true);
-            expect(quotes[0].amountOut).to.be.lt(TEN_USDC);
+            expect(bestRouteId).to.equal(0);
+            expect(bestAmountOut).to.equal(0);
         });
 
         it("getBestRoute retorna la ruta con mayor amountOut", async () => {
@@ -225,4 +226,89 @@ describe("PayNGoRouter", () => {
             ).to.be.revertedWithCustomError(router, "InvalidRecipient");
         });
     });
+
+    describe("executePayment con Gateway", () => {
+        let gateway: Awaited<ReturnType<typeof ethers.deployContract>>;
+
+        beforeEach(async () => {
+            // Deploy Gateway
+            const PayNGoGateway = await ethers.getContractFactory("PayNGoGateway");
+            gateway = await PayNGoGateway.deploy(
+                await mockUSDC.getAddress(),
+                await router.getAddress()
+            );
+            await gateway.waitForDeployment();
+
+            // Depositar ETH en gateway para sponsorship
+            await gateway.connect(owner).deposit({ value: ethers.parseEther("1") });
+
+            // Conectar Router → Gateway
+            await router.connect(owner).setPayNGoGateway(await gateway.getAddress());
+
+            // Alice aprueba al router
+            await mockUSDC.connect(alice).approve(await router.getAddress(), HUNDRED_USDC);
+        });
+
+        it("usa gasless cuando gateway tiene ETH y monto bajo threshold", async () => {
+            const bobBefore = await mockUSDC.balanceOf(bob.address);
+
+            const tx = await router.connect(alice).executePayment({
+                sender: alice.address,
+                recipient: bob.address,
+                tokenIn: await mockUSDC.getAddress(),
+                tokenOut: await mockUSDC.getAddress(),
+                amountIn: TEN_USDC,
+                minAmountOut: ethers.parseUnits("9.9", USDC_DECIMALS),
+                routeId: 0,
+                deadline: await getDeadline(),
+                orderId: ethers.ZeroHash,
+            });
+
+            await expect(tx).to.emit(router, "GaslessPaymentRouted");
+
+            const bobAfter = await mockUSDC.balanceOf(bob.address);
+            expect(bobAfter).to.be.gt(bobBefore);
+        });
+
+        it("isGaslessEligible retorna true cuando gateway tiene ETH", async () => {
+            const eligible = await router.isGaslessEligible(TEN_USDC);
+            expect(eligible).to.equal(true);
+        });
+
+        it("isGaslessEligible retorna false si monto supera threshold", async () => {
+            const overThreshold = ethers.parseUnits("600", USDC_DECIMALS);
+            const eligible = await router.isGaslessEligible(overThreshold);
+            expect(eligible).to.equal(false);
+        });
+
+        it("isGaslessEligible retorna false si gateway sin ETH", async () => {
+            // Retirar todo el ETH del gateway
+            const balance = await gateway.getEthBalance();
+            await gateway.connect(owner).withdraw(balance, owner.address);
+
+            const eligible = await router.isGaslessEligible(TEN_USDC);
+            expect(eligible).to.equal(false);
+        });
+
+        it("usa flujo directo cuando gateway no tiene ETH", async () => {
+            // Vaciar el gateway
+            const balance = await gateway.getEthBalance();
+            await gateway.connect(owner).withdraw(balance, owner.address);
+
+            const tx = await router.connect(alice).executePayment({
+                sender: alice.address,
+                recipient: bob.address,
+                tokenIn: await mockUSDC.getAddress(),
+                tokenOut: await mockUSDC.getAddress(),
+                amountIn: TEN_USDC,
+                minAmountOut: 0,
+                routeId: 0,
+                deadline: await getDeadline(),
+                orderId: ethers.ZeroHash,
+            });
+
+            await expect(tx).to.emit(router, "PaymentRouted");
+        });
+    });
+
 });

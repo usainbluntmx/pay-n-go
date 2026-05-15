@@ -1,135 +1,176 @@
-# template-evm
+# Pay 'n Go
 
-A personal, production-ready template for building EVM-compatible decentralized applications (dApps) and protocols. Designed to be cloned, configured, and deployed quickly for hackathons, competitions, or personal projects.
+Universal stablecoin payment infrastructure on Ethereum. Payment links, optimal routing, gasless flows, and AI-powered payment execution — all exposed as an open-source SDK any app can integrate.
 
-Supports **Arbitrum**, **Base**, and **Monad** out of the box, with easy extensibility to any EVM-compatible chain.
+Built for **ETH Mexico Hackathon 2026** on **Ethereum Sepolia**.
 
 ---
 
 ## Table of Contents
 
 - [What Is This?](#what-is-this)
+- [Architecture](#architecture)
+- [Deployed Contracts](#deployed-contracts)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
 - [Prerequisites](#prerequisites)
 - [Getting Started](#getting-started)
 - [Backend Guide](#backend-guide)
+- [SDK Guide](#sdk-guide)
 - [Frontend Guide](#frontend-guide)
 - [Environment Variables](#environment-variables)
 - [Available Scripts](#available-scripts)
-- [Deploying a Smart Contract](#deploying-a-smart-contract)
-- [Verifying a Smart Contract](#verifying-a-smart-contract)
+- [Deploying Contracts](#deploying-contracts)
 - [Running Tests](#running-tests)
 - [Deploying the Frontend to Vercel](#deploying-the-frontend-to-vercel)
-- [Using This Template for a New Project](#using-this-template-for-a-new-project)
-- [Supported Networks](#supported-networks)
-- [Glossary](#glossary)
 
 ---
 
 ## What Is This?
 
-`template-evm` is a full-stack monorepo template built to accelerate the development of Ethereum-compatible dApps. It comes pre-configured with everything you need:
+Pay 'n Go is a stablecoin payment protocol built on Ethereum Sepolia. It combines three complementary layers:
 
-- A **Hardhat** environment for writing, compiling, testing, and deploying Solidity smart contracts.
-- A **Next.js** frontend with wallet connection powered by Reown AppKit and Wagmi.
-- Multi-chain support with a centralized network configuration.
-- Automated deploy and verification scripts.
-- Code quality tools (ESLint, Prettier, solhint) already configured.
+- **PayNGoLinks** — Create shareable onchain payment requests. Anyone with the link can pay in USDC — no wallet setup required on their end.
+- **PayNGoRouter** — Intelligent payment routing with slippage protection. Automatically detects if gasless payments are available and uses them when the payer qualifies.
+- **PayNGoGateway** — Gas sponsorship infrastructure (Paymaster pattern). Users pay in USDC, the gateway covers gas. Ethereum becomes invisible.
 
-The goal is simple: clone this repo, replace the example contract and frontend with your own, fill in your environment variables, and you are ready to ship.
+The entire stack is exposed as `@payngo-labs/sdk` — an open-source TypeScript SDK any fintech, dApp, or wallet can integrate in minutes.
+
+Additionally, **PayNGoAgent** is an autonomous AI layer powered by Claude that interprets natural language payment instructions in any language, queries onchain state, and executes the optimal action.
+
+---
+
+## Architecture
+
+```
+User / External App
+        ↓
+@payngo-labs/sdk
+  ├── LinksModule    → PayNGoLinks.sol
+  ├── RouterModule   → PayNGoRouter.sol  ──→  PayNGoGateway.sol
+  ├── GatewayModule  → PayNGoGateway.sol
+  └── PayNGoAgent    → Claude API (via proxy)
+        ↓
+Ethereum Sepolia
+```
+
+### Router → Gateway Integration
+
+When `executePayment` is called, the Router automatically checks:
+
+```
+amountIn ≤ 500 USDC AND gateway has ETH?
+  ├── YES → gasless flow (Gateway pays gas, user only signs USDC transfer)
+  └── NO  → direct flow (user pays gas normally)
+```
+
+This makes gasless payments transparent — the user never has to think about it.
+
+---
+
+## Deployed Contracts
+
+All contracts are deployed and verified on **Ethereum Sepolia**.
+
+| Contract | Address | Etherscan |
+|---|---|---|
+| PayNGoLinks | `0x1e6DFDac949089a02e48aBcb63E7381A3D77bF29` | [View](https://sepolia.etherscan.io/address/0x1e6DFDac949089a02e48aBcb63E7381A3D77bF29#code) |
+| PayNGoRouter | `0x52e5d621290F9941254d42F8AB905E3fAB32f6F1` | [View](https://sepolia.etherscan.io/address/0x52e5d621290F9941254d42F8AB905E3fAB32f6F1#code) |
+| PayNGoGateway | `0x4a0D7CfF4C09f656c352aa190645a96Bca25410D` | [View](https://sepolia.etherscan.io/address/0x4a0D7CfF4C09f656c352aa190645a96Bca25410D#code) |
+| USDC (Sepolia) | `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238` | [View](https://sepolia.etherscan.io/address/0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238) |
 
 ---
 
 ## Tech Stack
 
-### Backend
+### Smart Contracts
 
 | Tool | Purpose |
 |---|---|
 | [Hardhat v2](https://hardhat.org/) | Ethereum development environment |
 | [Solidity ^0.8.28](https://soliditylang.org/) | Smart contract language |
-| [OpenZeppelin Contracts](https://www.openzeppelin.com/contracts) | Secure, audited contract libraries |
+| [OpenZeppelin Contracts v5](https://www.openzeppelin.com/contracts) | ReentrancyGuard, Ownable, SafeERC20 |
 | [hardhat-deploy](https://github.com/wighawag/hardhat-deploy) | Deterministic deployment system |
-| [hardhat-toolbox](https://hardhat.org/hardhat-runner/plugins/nomicfoundation-hardhat-toolbox) | Bundled Hardhat plugins |
-| [hardhat-network-helpers](https://hardhat.org/hardhat-network/docs/helpers) | Test utilities (time manipulation, snapshots) |
-| [hardhat-gas-reporter](https://github.com/cgewecke/hardhat-gas-reporter) | Gas usage reports during tests |
-| [solidity-coverage](https://github.com/sc-forks/solidity-coverage) | Code coverage for Solidity |
 | [TypeChain](https://github.com/dethcrypto/TypeChain) | TypeScript bindings for contracts |
-| [Mocha](https://mochajs.org/) + [Chai](https://www.chaijs.com/) | Testing framework and assertions |
-| [solhint](https://protofire.github.io/solhint/) | Solidity linter |
-| [Prettier](https://prettier.io/) + [prettier-plugin-solidity](https://github.com/prettier-solidity/prettier-plugin-solidity) | Code formatter |
-| [dotenv](https://github.com/motdotla/dotenv) | Environment variable management |
+| [Mocha](https://mochajs.org/) + [Chai](https://www.chaijs.com/) | Testing framework |
 | [ethers v6](https://docs.ethers.org/v6/) | Ethereum library |
+
+### SDK
+
+| Tool | Purpose |
+|---|---|
+| [viem v2](https://viem.sh/) | TypeScript Ethereum client |
+| [TypeScript](https://www.typescriptlang.org/) | Typed JavaScript |
+| [Anthropic SDK](https://docs.anthropic.com/) | Claude API for AI agent |
 
 ### Frontend
 
 | Tool | Purpose |
 |---|---|
-| [Next.js 15](https://nextjs.org/) | React framework with SSR and Vercel-native deployment |
-| [React 19](https://react.dev/) | UI library |
-| [TypeScript](https://www.typescriptlang.org/) | Typed JavaScript |
+| [Next.js 16](https://nextjs.org/) | React framework |
 | [Wagmi](https://wagmi.sh/) | React hooks for Ethereum |
-| [Viem](https://viem.sh/) | TypeScript Ethereum client |
-| [Reown AppKit](https://reown.com/appkit) | Wallet connection modal and session management |
+| [Reown AppKit](https://reown.com/appkit) | Wallet connection modal |
 | [TanStack Query](https://tanstack.com/query) | Async state management |
-| [Tailwind CSS v4](https://tailwindcss.com/) | Utility-first CSS framework |
-| [shadcn/ui](https://ui.shadcn.com/) | Accessible, composable UI components |
-| [ESLint](https://eslint.org/) | JavaScript/TypeScript linter |
-| [Prettier](https://prettier.io/) | Code formatter |
 
 ---
 
 ## Project Structure
 
 ```
-template-evm/
-├── .gitignore                  # Global Git ignore rules
-├── backend/
+pay-n-go/
+├── .gitignore
+├── README.md
+├── backend/                        # Smart contracts
 │   ├── contracts/
-│   │   └── Counter.sol         # Example contract (replace with yours)
+│   │   ├── PayNGoLinks.sol         # Payment links protocol
+│   │   ├── PayNGoRouter.sol        # Optimal routing + gasless detection
+│   │   ├── PayNGoGateway.sol       # Gas sponsorship (Paymaster)
+│   │   └── MockERC20.sol           # Test-only mock token
 │   ├── deploy/
-│   │   └── 01_deploy_counter.ts  # Deploy script (one file per contract)
-│   ├── scripts/
-│   │   └── deploy-and-verify.ts  # Automated deploy + verify in one command
+│   │   ├── 01_deploy_payngo_links.ts
+│   │   ├── 02_deploy_payngo_router.ts
+│   │   └── 03_deploy_payngo_gateway.ts
 │   ├── test/
-│   │   └── Counter.test.ts     # Contract tests
-│   ├── typechain-types/        # Auto-generated TypeScript typings (do not edit)
-│   ├── .env                    # Your private environment variables (never commit)
-│   ├── .prettierrc             # Prettier config for Solidity
-│   ├── .solhint.json           # Solidity linting rules
-│   ├── hardhat.config.ts       # Hardhat + network + plugin configuration
+│   │   ├── PayNGoLinks.test.ts
+│   │   ├── PayNGoRouter.test.ts
+│   │   └── PayNGoGateway.test.ts
+│   ├── hardhat.config.ts
+│   └── package.json
+├── sdk/                            # @payngo-labs/sdk
+│   ├── src/
+│   │   ├── index.ts                # Public exports
+│   │   ├── client.ts               # PayNGoClient (main entry point)
+│   │   ├── links.ts                # LinksModule
+│   │   ├── router.ts               # RouterModule
+│   │   ├── gateway.ts              # GatewayModule
+│   │   ├── agent.ts                # PayNGoAgent (AI layer)
+│   │   ├── constants.ts            # Contract addresses + ABIs
+│   │   ├── types.ts                # Shared TypeScript types
+│   │   └── errors.ts               # PayNGoError class
 │   ├── package.json
 │   └── tsconfig.json
-└── frontend/
+└── frontend/                       # Next.js app
     ├── app/
-    │   ├── globals.css         # Global styles
-    │   ├── layout.tsx          # Root layout with AppKitProvider
-    │   └── page.tsx            # Home page
-    ├── components/ui/          # shadcn/ui components (add via CLI)
+    │   ├── page.tsx                # Landing page
+    │   ├── dashboard/page.tsx      # Dashboard (links, send, agent)
+    │   ├── pay/[id]/page.tsx       # Public payment page
+    │   ├── docs/page.tsx           # SDK documentation
+    │   └── api/agent/route.ts      # Claude API proxy
+    ├── hooks/
+    │   ├── usePayNGoClient.ts
+    │   ├── useLinks.ts
+    │   ├── useRouter.ts
+    │   ├── useGateway.ts
+    │   └── useAgent.ts
     ├── config/
-    │   ├── appkit.ts           # Reown AppKit + Wagmi adapter config
-    │   └── chains.ts           # Centralized network definitions
-    ├── context/
-    │   └── AppKitProvider.tsx  # Global wallet provider
-    ├── hooks/                  # Custom React hooks (add yours here)
-    ├── lib/
-    │   └── utils.ts            # shadcn/ui utility functions
-    ├── public/                 # Static assets
-    ├── .env.local              # Your private environment variables (never commit)
-    ├── .prettierrc             # Prettier config for TypeScript/React
-    ├── components.json         # shadcn/ui configuration
-    ├── eslint.config.mjs       # ESLint configuration
-    ├── next.config.ts          # Next.js configuration
-    ├── package.json
-    └── tsconfig.json
+    │   ├── appkit.ts
+    │   └── chains.ts
+    └── package.json
 ```
 
 ---
 
 ## Prerequisites
-
-Before using this template, make sure you have the following installed on your machine:
 
 | Requirement | Minimum Version | Check |
 |---|---|---|
@@ -139,10 +180,11 @@ Before using this template, make sure you have the following installed on your m
 
 You will also need:
 
-- A crypto wallet (e.g., [MetaMask](https://metamask.io/)) to interact with the dApp.
-- A **Reown Project ID** (free) from [cloud.reown.com](https://cloud.reown.com) for wallet connection.
-- RPC URLs for the networks you want to deploy to (e.g., from [Alchemy](https://www.alchemy.com/) or [Infura](https://infura.io/)).
-- Explorer API keys for contract verification (e.g., [Arbiscan](https://arbiscan.io/), [Basescan](https://basescan.org/)).
+- A crypto wallet (e.g., [MetaMask](https://metamask.io/))
+- A **Reown Project ID** (free) from [cloud.reown.com](https://cloud.reown.com)
+- An **Alchemy** RPC URL for Ethereum Sepolia from [alchemy.com](https://alchemy.com)
+- An **Etherscan API key** from [etherscan.io](https://etherscan.io) for contract verification
+- An **Anthropic API key** from [console.anthropic.com](https://console.anthropic.com) for the AI agent
 
 ---
 
@@ -151,8 +193,8 @@ You will also need:
 ### 1. Clone the repository
 
 ```bash
-git clone <your-repo-url>
-cd template-evm
+git clone https://github.com/usainbluntmx/pay-n-go.git
+cd pay-n-go
 ```
 
 ### 2. Install backend dependencies
@@ -162,22 +204,28 @@ cd backend
 npm install
 ```
 
-### 3. Install frontend dependencies
+### 3. Install SDK dependencies
+
+```bash
+cd ../sdk
+npm install
+npm run build
+```
+
+### 4. Install frontend dependencies
 
 ```bash
 cd ../frontend
 npm install
 ```
 
-### 4. Configure environment variables
+### 5. Configure environment variables
 
 See the [Environment Variables](#environment-variables) section below.
 
 ---
 
 ## Backend Guide
-
-The backend is a Hardhat project located in the `backend/` folder.
 
 ### Compile contracts
 
@@ -186,12 +234,20 @@ cd backend
 npm run compile
 ```
 
-This compiles all `.sol` files in `contracts/` and auto-generates TypeScript typings in `typechain-types/`.
+Compiles all `.sol` files and auto-generates TypeScript typings in `typechain-types/`.
 
 ### Run tests
 
 ```bash
 npm run test
+```
+
+Expected output: **49 passing**.
+
+### Run with gas reporting
+
+```bash
+REPORT_GAS=true npm run test
 ```
 
 ### Check code coverage
@@ -200,25 +256,93 @@ npm run test
 npm run coverage
 ```
 
-### Start a local blockchain node
+### Start a local node
 
 ```bash
 npm run node
 ```
 
-This starts a local Hardhat node at `http://127.0.0.1:8545` with pre-funded test accounts. Keep this terminal open while developing locally.
+---
 
-### Clean build artifacts
+## SDK Guide
+
+### Install
 
 ```bash
-npm run clean
+npm install @payngo-labs/sdk
 ```
+
+### Initialize
+
+```typescript
+import { PayNGoClient, CHAIN_IDS } from "@payngo-labs/sdk";
+import { createPublicClient, createWalletClient, http } from "viem";
+import { sepolia } from "viem/chains";
+
+const publicClient = createPublicClient({
+  chain: sepolia,
+  transport: http("YOUR_RPC_URL"),
+});
+
+const client = new PayNGoClient({
+  publicClient,
+  walletClient,       // optional — required for write operations
+  chainId: CHAIN_IDS.ETHEREUM_SEPOLIA,
+});
+```
+
+### Create a payment link
+
+```typescript
+import { parseUnits } from "viem";
+
+const { linkId } = await client.links.createLink({
+  recipient: "0xRecipientAddress",
+  amount: parseUnits("25", 6),   // 25 USDC
+  memo: "Invoice #001",
+  expiresIn: 86400,              // 24 hours (optional)
+});
+
+console.log("Share: https://yourapp.com/pay/" + linkId);
+```
+
+### Send USDC via router
+
+```typescript
+const result = await client.router.executePayment({
+  recipient: "0xRecipientAddress",
+  amount: parseUnits("10", 6),
+  slippageBps: 100,              // 1% slippage tolerance
+});
+// Router automatically uses gasless if Gateway has ETH and amount ≤ 500 USDC
+```
+
+### Use the AI agent
+
+```typescript
+import { PayNGoAgent } from "@payngo-labs/sdk";
+
+const agent = new PayNGoAgent({
+  client,
+  anthropicApiKey: "",
+  apiUrl: "/api/agent",          // your proxy route
+});
+
+const result = await agent.processInstruction(
+  "Send 5 USDC to 0xABC... for design work",
+  { userAddress: "0xYourAddress" },
+  false  // analyze only, don't auto-execute
+);
+
+console.log(result.suggestion.action);    // "execute_payment"
+console.log(result.suggestion.riskLevel); // "low"
+```
+
+Full SDK documentation available at `/docs` on the live app.
 
 ---
 
 ## Frontend Guide
-
-The frontend is a Next.js project located in the `frontend/` folder.
 
 ### Start development server
 
@@ -227,27 +351,22 @@ cd frontend
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000).
+
+### Pages
+
+| Route | Description |
+|---|---|
+| `/` | Landing page |
+| `/dashboard` | Create links, send USDC, use AI agent |
+| `/pay/[id]` | Public payment page — share with payers |
+| `/docs` | Full SDK documentation |
 
 ### Build for production
 
 ```bash
 npm run build
 ```
-
-### Start production server locally
-
-```bash
-npm run start
-```
-
-### Add a shadcn/ui component
-
-```bash
-npx shadcn@latest add button
-```
-
-Replace `button` with any component from the [shadcn/ui catalog](https://ui.shadcn.com/docs/components).
 
 ---
 
@@ -256,34 +375,42 @@ Replace `button` with any component from the [shadcn/ui catalog](https://ui.shad
 ### Backend — `backend/.env`
 
 ```bash
-# Your wallet private key (without 0x prefix)
+# Your wallet private key (deployer)
 PRIVATE_KEY=
 
-# RPC URLs — get these from Alchemy, Infura, or your provider
-ARBITRUM_RPC_URL=
-ARBITRUM_SEPOLIA_RPC_URL=
-BASE_RPC_URL=
-BASE_SEPOLIA_RPC_URL=
-MONAD_TESTNET_RPC_URL=
+# RPC URL for Ethereum Sepolia
+ETHEREUM_SEPOLIA_RPC_URL=
 
-# Explorer API keys for contract verification
-ARBISCAN_API_KEY=
-BASESCAN_API_KEY=
+# Etherscan API key for contract verification
+ETHERSCAN_API_KEY=
 
 # Set to "true" to enable gas reporting during tests
 REPORT_GAS=false
 ```
 
-> ⚠️ Never commit your `.env` file. It is already protected by `.gitignore`.
+### SDK — `sdk/.env`
+
+```bash
+# For running the agent demo locally
+PRIVATE_KEY=
+ANTHROPIC_API_KEY=
+ETHEREUM_SEPOLIA_RPC_URL=
+```
 
 ### Frontend — `frontend/.env.local`
 
 ```bash
-# Get your Project ID at https://cloud.reown.com
+# Reown AppKit project ID
 NEXT_PUBLIC_REOWN_PROJECT_ID=
+
+# RPC URL (public, used client-side)
+NEXT_PUBLIC_SEPOLIA_RPC_URL=
+
+# Anthropic API key (server-side only — NO NEXT_PUBLIC_ prefix)
+ANTHROPIC_API_KEY=
 ```
 
-> ⚠️ Never commit your `.env.local` file. It is already protected by `.gitignore`.
+> ⚠️ Never commit `.env` or `.env.local` files. They are protected by `.gitignore`.
 
 ---
 
@@ -294,93 +421,61 @@ NEXT_PUBLIC_REOWN_PROJECT_ID=
 | Command | Description |
 |---|---|
 | `npm run compile` | Compile all Solidity contracts |
-| `npm run test` | Run all tests |
+| `npm run test` | Run all tests (49 passing) |
 | `npm run coverage` | Run tests with coverage report |
 | `npm run node` | Start local Hardhat node |
 | `npm run clean` | Remove build artifacts |
 | `npm run deploy:local` | Deploy to local Hardhat node |
-| `npm run deploy:arbitrum` | Deploy to Arbitrum Mainnet |
-| `npm run deploy:arbitrumSepolia` | Deploy to Arbitrum Sepolia testnet |
-| `npm run deploy:base` | Deploy to Base Mainnet |
-| `npm run deploy:baseSepolia` | Deploy to Base Sepolia testnet |
-| `npm run deploy:monadTestnet` | Deploy to Monad Testnet |
-| `npm run verify:arbitrum` | Verify contract on Arbitrum Mainnet |
-| `npm run verify:arbitrumSepolia` | Verify contract on Arbitrum Sepolia |
-| `npm run verify:base` | Verify contract on Base Mainnet |
-| `npm run verify:baseSepolia` | Verify contract on Base Sepolia |
+| `npm run deploy:ethereumSepolia` | Deploy to Ethereum Sepolia |
+| `npm run verify:ethereumSepolia` | Verify contracts on Etherscan |
+
+### SDK (`cd sdk`)
+
+| Command | Description |
+|---|---|
+| `npm run build` | Compile TypeScript to `dist/` |
+| `npm run dev` | Watch mode |
+| `npm run demo` | Run the AI agent demo |
 
 ### Frontend (`cd frontend`)
 
 | Command | Description |
 |---|---|
-| `npm run dev` | Start development server at localhost:3000 |
+| `npm run dev` | Start development server |
 | `npm run build` | Build for production |
 | `npm run start` | Start production server |
 | `npm run lint` | Run ESLint |
 
 ---
 
-## Deploying a Smart Contract
+## Deploying Contracts
+
+### To Ethereum Sepolia
+
+Make sure `backend/.env` has `PRIVATE_KEY`, `ETHEREUM_SEPOLIA_RPC_URL`, and `ETHERSCAN_API_KEY`, then:
+
+```bash
+cd backend
+npm run deploy:ethereumSepolia
+```
+
+The deploy scripts run in order and automatically:
+1. Deploy `PayNGoLinks`
+2. Deploy `PayNGoRouter` and connect it to the existing Gateway
+3. Deploy `PayNGoGateway` and call `setPayNGoGateway` on the Router
 
 ### To a local node
 
-Open two terminals:
-
-**Terminal 1 — start the node:**
+**Terminal 1:**
 ```bash
 cd backend
 npm run node
 ```
 
-**Terminal 2 — deploy:**
+**Terminal 2:**
 ```bash
-cd backend
 npm run deploy:local
 ```
-
-### To a testnet or mainnet
-
-Make sure your `backend/.env` has the correct `PRIVATE_KEY` and RPC URL for your target network, then run:
-
-```bash
-npm run deploy:arbitrumSepolia
-```
-
-Replace `arbitrumSepolia` with your target network. The deploy script will automatically wait for enough confirmations before proceeding.
-
-### Automated deploy + verify in one command
-
-```bash
-npx hardhat run scripts/deploy-and-verify.ts --network arbitrumSepolia
-```
-
-This script deploys the contract, waits 30 seconds for the explorer to index it, and then verifies it automatically.
-
----
-
-## Verifying a Smart Contract
-
-Contract verification makes your source code publicly readable on block explorers (Arbiscan, Basescan, etc.).
-
-### Verify after deploy
-
-```bash
-npm run verify:arbitrumSepolia
-```
-
-You can also verify manually with a specific address:
-
-```bash
-npx hardhat verify --network arbitrumSepolia <CONTRACT_ADDRESS>
-```
-
-If your constructor takes arguments:
-
-```bash
-npx hardhat verify --network arbitrumSepolia <CONTRACT_ADDRESS> <ARG1> <ARG2>
-```
-
-> Make sure your explorer API key is set in `backend/.env` before verifying.
 
 ---
 
@@ -391,126 +486,37 @@ cd backend
 npm run test
 ```
 
-To run a specific test file:
+**49 tests across 3 files:**
+
+| File | Tests | Coverage |
+|---|---|---|
+| `PayNGoLinks.test.ts` | 13 | createLink, payLink, cancelLink, views |
+| `PayNGoRouter.test.ts` | 17 | routes, quotes, executePayment, Router→Gateway |
+| `PayNGoGateway.test.ts` | 19 | deposit, policies, whitelist, sponsorTx, gaslessPayment |
+
+To run a specific file:
 
 ```bash
-npx hardhat test test/Counter.test.ts
+npx hardhat test test/PayNGoRouter.test.ts
 ```
-
-To run with gas reporting enabled:
-
-```bash
-REPORT_GAS=true npm run test
-```
-
-To run with coverage:
-
-```bash
-npm run coverage
-```
-
-Coverage results will appear in `backend/coverage/index.html`. Open it in a browser for a detailed line-by-line report.
 
 ---
 
 ## Deploying the Frontend to Vercel
 
 1. Push your repository to GitHub.
-2. Go to [vercel.com](https://vercel.com) and click **Add New Project**.
-3. Import your GitHub repository.
-4. Set the **Root Directory** to `frontend`.
-5. Add your environment variable: `NEXT_PUBLIC_REOWN_PROJECT_ID`.
-6. Click **Deploy**.
+2. Go to [vercel.com/new](https://vercel.com/new) and import the repo.
+3. Set **Root Directory** to `frontend`.
+4. Add environment variables:
+   - `NEXT_PUBLIC_REOWN_PROJECT_ID`
+   - `NEXT_PUBLIC_SEPOLIA_RPC_URL`
+   - `ANTHROPIC_API_KEY`
+5. Click **Deploy**.
 
-Vercel will automatically redeploy every time you push to your main branch.
-
----
-
-## Using This Template for a New Project
-
-1. Clone the repo and set up environment variables as described above.
-2. Replace `backend/contracts/Counter.sol` with your own contract.
-3. Update `backend/deploy/01_deploy_counter.ts` with your contract name and constructor arguments.
-4. Update `backend/test/Counter.test.ts` with tests for your contract.
-5. Compile and test: `npm run compile && npm run test`.
-6. Update `frontend/app/page.tsx` with your dApp UI.
-7. Update `frontend/config/appkit.ts` with your app name, description, and URL.
-8. Deploy your contract to the target network.
-9. Connect your frontend to the deployed contract using the generated TypeChain types from `backend/typechain-types/`.
-10. Deploy the frontend to Vercel.
+Vercel redeploys automatically on every push to `main`.
 
 ---
 
-## Supported Networks
+## License
 
-| Network | Type | Chain ID |
-|---|---|---|
-| Hardhat (local) | Local | 31337 |
-| Localhost | Local | 31337 |
-| Arbitrum One | Mainnet | 42161 |
-| Arbitrum Sepolia | Testnet | 421614 |
-| Base | Mainnet | 8453 |
-| Base Sepolia | Testnet | 84532 |
-| Monad Testnet | Testnet | 10143 |
-
-### Adding a new network
-
-**Backend — `backend/hardhat.config.ts`:**
-
-```typescript
-newNetwork: {
-  chainId: 12345,
-  url: process.env.NEW_NETWORK_RPC_URL || "",
-  accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
-},
-```
-
-**Frontend — `frontend/config/chains.ts`:**
-
-```typescript
-export const newNetwork = {
-  id: 12345,
-  name: "New Network",
-  nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: ["https://rpc.newnetwork.xyz"] } },
-  blockExplorers: { default: { name: "Explorer", url: "https://explorer.newnetwork.xyz" } },
-} as const satisfies AppKitNetwork;
-```
-
-Then add it to the `networks` array in the same file.
-
----
-
-## Glossary
-
-**dApp** — Decentralized application. An app whose backend logic runs on a blockchain via smart contracts.
-
-**EVM** — Ethereum Virtual Machine. The runtime environment for smart contracts on Ethereum and compatible chains (Arbitrum, Base, Monad, etc.).
-
-**Smart Contract** — A self-executing program deployed on a blockchain. Once deployed, its code cannot be changed.
-
-**ABI** — Application Binary Interface. Describes the functions and events of a smart contract so frontends can interact with it.
-
-**RPC URL** — Remote Procedure Call URL. The endpoint your app uses to communicate with a blockchain node.
-
-**Testnet** — A public blockchain network used for testing. Tokens have no real value. Use testnets before deploying to mainnet.
-
-**Mainnet** — The live, production blockchain where real assets are at stake.
-
-**Gas** — The fee paid to execute transactions and smart contract functions on an EVM chain.
-
-**Wallet** — Software (e.g., MetaMask) that manages your private keys and lets you sign transactions.
-
-**Private Key** — A secret cryptographic key that proves ownership of a wallet. Never share it or commit it to Git.
-
-**Contract Verification** — The process of uploading your contract source code to a block explorer so anyone can read and audit it.
-
-**TypeChain** — A tool that generates TypeScript type definitions from your compiled contracts, enabling type-safe contract interactions.
-
-**hardhat-deploy** — A Hardhat plugin that manages deterministic deployments and keeps track of deployed contract addresses across networks.
-
-**Reown AppKit** — A wallet connection library (formerly WalletConnect AppKit) that provides a customizable modal for connecting Web3 wallets.
-
-**Wagmi** — A collection of React hooks for interacting with Ethereum, built on top of Viem.
-
-**Viem** — A lightweight, type-safe TypeScript library for Ethereum interactions.
+MIT — built by [Zero Two Labs](https://github.com/usainbluntmx) for ETH Mexico Hackathon 2026.

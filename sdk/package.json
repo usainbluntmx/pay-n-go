@@ -1,6 +1,6 @@
 {
     "name": "@payngo-labs/sdk",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "SDK for Pay'n Go — universal stablecoin payment links on Ethereum",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
