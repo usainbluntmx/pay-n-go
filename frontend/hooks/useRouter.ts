@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { parseUnits } from "viem";
 import { usePayNGoClient } from "./usePayNGoClient";
-import { RouteQuote } from "@payngo/sdk";
+import { RouteQuote } from "@payngo-labs/sdk";
 
 export function useRouter() {
     const client = usePayNGoClient();

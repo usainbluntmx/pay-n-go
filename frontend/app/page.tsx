@@ -128,7 +128,7 @@ export default function LandingPage() {
       {/* SDK snippet */}
       <section className="sdk-section">
         <p className="sdk-label">// integrate in minutes</p>
-        <pre className="sdk-code">{`import { PayNGoClient } from "@payngo/sdk";
+        <pre className="sdk-code">{`import { PayNGoClient } from "@payngo-labs/sdk";
 
 const client = new PayNGoClient({ publicClient, walletClient, chainId: 11155111 });
 

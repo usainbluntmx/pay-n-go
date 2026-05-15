@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { useAccount } from "wagmi";
 import { parseUnits, formatUnits } from "viem";
 import { usePayNGoClient } from "./usePayNGoClient";
-import { PaymentLink, CreateLinkParams, LinkStatus } from "@payngo/sdk";
+import { PaymentLink, CreateLinkParams, LinkStatus } from "@payngo-labs/sdk";
 
 export interface CreateLinkInput {
     recipient: string;

@@ -5,7 +5,7 @@ import { useAccount } from "wagmi";
 import { useLinks } from "@/hooks/useLinks";
 import { useRouter } from "@/hooks/useRouter";
 import { useAgent } from "@/hooks/useAgent";
-import { PaymentLink, LinkStatus, AgentPaymentSuggestion } from "@payngo/sdk";
+import { PaymentLink, LinkStatus, AgentPaymentSuggestion } from "@payngo-labs/sdk";
 
 type Tab = "links" | "send" | "agent";
 

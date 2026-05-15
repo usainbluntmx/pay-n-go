@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { useAccount } from "wagmi";
 import { usePayNGoClient } from "./usePayNGoClient";
-import { PayNGoAgent, AgentResult, AgentPaymentSuggestion } from "@payngo/sdk";
+import { PayNGoAgent, AgentResult, AgentPaymentSuggestion } from "@payngo-labs/sdk";
 
 export function useAgent() {
     const client = usePayNGoClient();

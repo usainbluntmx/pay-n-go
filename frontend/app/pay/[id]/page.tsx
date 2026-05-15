@@ -5,13 +5,13 @@ import { useParams } from "next/navigation";
 import { useAccount } from "wagmi";
 import { formatUnits } from "viem";
 import { useLinks } from "@/hooks/useLinks";
-import { PaymentLink, LinkStatus } from "@payngo/sdk";
+import { PaymentLink, LinkStatus } from "@payngo-labs/sdk";
 
 const STATUS_LABELS: Record<number, { label: string; color: string }> = {
-  [LinkStatus.Active]:    { label: "AWAITING PAYMENT", color: "#00ffaa" },
-  [LinkStatus.Paid]:      { label: "PAID",             color: "#3b82f6" },
-  [LinkStatus.Cancelled]: { label: "CANCELLED",        color: "#ef4444" },
-  [LinkStatus.Expired]:   { label: "EXPIRED",          color: "#f59e0b" },
+  [LinkStatus.Active]: { label: "AWAITING PAYMENT", color: "#00ffaa" },
+  [LinkStatus.Paid]: { label: "PAID", color: "#3b82f6" },
+  [LinkStatus.Cancelled]: { label: "CANCELLED", color: "#ef4444" },
+  [LinkStatus.Expired]: { label: "EXPIRED", color: "#f59e0b" },
 };
 
 export default function PayPage() {
@@ -38,7 +38,7 @@ export default function PayPage() {
       const result = await payLink(link.id);
       setTxHash(result.txHash);
       setPaid(true);
-    } catch {}
+    } catch { }
   };
 
   const formatted = link ? formatLink(link) : null;
@@ -169,8 +169,8 @@ export default function PayPage() {
                   {formatted?.isPaid
                     ? "already paid"
                     : formatted?.isCancelled
-                    ? "cancelled"
-                    : "expired"}
+                      ? "cancelled"
+                      : "expired"}
                   .
                 </div>
               )}

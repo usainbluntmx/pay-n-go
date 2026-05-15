@@ -6,17 +6,17 @@ import Link from "next/link";
 type Section = "quickstart" | "links" | "router" | "gateway" | "agent" | "contracts";
 
 const SECTIONS: { id: Section; label: string; icon: string }[] = [
-  { id: "quickstart", label: "Quickstart",       icon: "▶" },
-  { id: "links",      label: "PayNGoLinks",       icon: "⬡" },
-  { id: "router",     label: "PayNGoRouter",      icon: "⟳" },
-  { id: "gateway",    label: "PayNGoGateway",     icon: "◈" },
-  { id: "agent",      label: "AI Agent",          icon: "◎" },
-  { id: "contracts",  label: "Contracts",         icon: "⬢" },
+  { id: "quickstart", label: "Quickstart", icon: "▶" },
+  { id: "links", label: "PayNGoLinks", icon: "⬡" },
+  { id: "router", label: "PayNGoRouter", icon: "⟳" },
+  { id: "gateway", label: "PayNGoGateway", icon: "◈" },
+  { id: "agent", label: "AI Agent", icon: "◎" },
+  { id: "contracts", label: "Contracts", icon: "⬢" },
 ];
 
 const CONTRACTS = [
-  { name: "PayNGoLinks",   address: "0x1e6DFDac949089a02e48aBcb63E7381A3D77bF29", explorer: "https://sepolia.etherscan.io/address/0x1e6DFDac949089a02e48aBcb63E7381A3D77bF29" },
-  { name: "PayNGoRouter",  address: "0x43246220b9e7C3d4500c0f2B778C1C916a63a2FF", explorer: "https://sepolia.etherscan.io/address/0x43246220b9e7C3d4500c0f2B778C1C916a63a2FF" },
+  { name: "PayNGoLinks", address: "0x1e6DFDac949089a02e48aBcb63E7381A3D77bF29", explorer: "https://sepolia.etherscan.io/address/0x1e6DFDac949089a02e48aBcb63E7381A3D77bF29" },
+  { name: "PayNGoRouter", address: "0x43246220b9e7C3d4500c0f2B778C1C916a63a2FF", explorer: "https://sepolia.etherscan.io/address/0x43246220b9e7C3d4500c0f2B778C1C916a63a2FF" },
   { name: "PayNGoGateway", address: "0xEa3D3FeB0619f281cA69b2884cE00585c7Be1710", explorer: "https://sepolia.etherscan.io/address/0xEa3D3FeB0619f281cA69b2884cE00585c7Be1710" },
 ];
 
@@ -181,7 +181,7 @@ export default function DocsPage() {
                   <span className="step-num">02</span>
                   <div className="step-body">
                     <h3>Initialize the client</h3>
-                    <Code>{`import { PayNGoClient } from "@payngo/sdk";
+                    <Code>{`import { PayNGoClient } from "@payngo-labs/sdk";
 import { createPublicClient, createWalletClient, http } from "viem";
 import { sepolia } from "viem/chains";
 
@@ -239,7 +239,7 @@ console.log("Tx hash:", result.txHash);`}</Code>
                   <span className="step-num">05</span>
                   <div className="step-body">
                     <h3>Use the AI agent</h3>
-                    <Code>{`import { PayNGoAgent } from "@payngo/sdk";
+                    <Code>{`import { PayNGoAgent } from "@payngo-labs/sdk";
 
 const agent = new PayNGoAgent({
   client,
@@ -264,10 +264,10 @@ console.log(result.suggestion.riskLevel); // "low"`}</Code>
                 <p className="section-label">// available modules</p>
                 <div className="module-grid">
                   {[
-                    { icon: "⬡", name: "client.links",   desc: "Create, pay and manage payment links" },
-                    { icon: "⟳", name: "client.router",  desc: "Optimal route selection for USDC payments" },
+                    { icon: "⬡", name: "client.links", desc: "Create, pay and manage payment links" },
+                    { icon: "⟳", name: "client.router", desc: "Optimal route selection for USDC payments" },
                     { icon: "◈", name: "client.gateway", desc: "Gasless payments via Paymaster" },
-                    { icon: "◎", name: "PayNGoAgent",    desc: "Natural language payment execution" },
+                    { icon: "◎", name: "PayNGoAgent", desc: "Natural language payment execution" },
                   ].map((m) => (
                     <div key={m.name} className="module-card">
                       <span className="module-icon">{m.icon}</span>
@@ -586,7 +586,7 @@ console.log("Gasless available:", isAvailable);`}
                   { name: "autoExecute", type: "boolean?", desc: "Auto-execute if risk is low. Default: false" },
                 ]}
                 returns="Promise<AgentResult>"
-                example={`import { PayNGoAgent } from "@payngo/sdk";
+                example={`import { PayNGoAgent } from "@payngo-labs/sdk";
 
 const agent = new PayNGoAgent({
   client,
@@ -688,7 +688,7 @@ export async function POST(req: NextRequest) {
 
               <div className="note-box" style={{ marginTop: "2rem" }}>
                 <p className="note-title">Using contract addresses in the SDK</p>
-                <Code>{`import { CONTRACT_ADDRESSES, CHAIN_IDS } from "@payngo/sdk";
+                <Code>{`import { CONTRACT_ADDRESSES, CHAIN_IDS } from "@payngo-labs/sdk";
 
 const addresses = CONTRACT_ADDRESSES[CHAIN_IDS.ETHEREUM_SEPOLIA];
 
@@ -711,7 +711,7 @@ console.log(addresses.usdc);
   PAYNGO_LINKS_ABI,
   PAYNGO_ROUTER_ABI,
   PAYNGO_GATEWAY_ABI,
-} from "@payngo/sdk";
+} from "@payngo-labs/sdk";
 
 // Use with viem directly
 const result = await publicClient.readContract({

@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useWalletClient, usePublicClient } from "wagmi";
-import { PayNGoClient, CHAIN_IDS } from "@payngo/sdk";
+import { PayNGoClient, CHAIN_IDS } from "@payngo-labs/sdk";
 
 export function usePayNGoClient() {
     const { data: walletClient } = useWalletClient();

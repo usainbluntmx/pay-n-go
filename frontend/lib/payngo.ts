@@ -1,4 +1,4 @@
-import { PayNGoClient, CHAIN_IDS } from "@payngo/sdk";
+import { PayNGoClient, CHAIN_IDS } from "@payngo-labs/sdk";
 import { createPublicClient, http } from "viem";
 import { sepolia } from "viem/chains";
 
