@@ -173,7 +173,7 @@ export default function DocsPage() {
                   <span className="step-num">01</span>
                   <div className="step-body">
                     <h3>Install the SDK</h3>
-                    <Code>{"npm install @payngo/sdk viem"}</Code>
+                    <Code>{"npm install @payngo-labs/sdk viem"}</Code>
                   </div>
                 </div>
 
