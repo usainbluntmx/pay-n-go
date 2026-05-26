@@ -154,7 +154,6 @@ export default function DashboardPage() {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
   const isSending = routerLoading || gaslessLoading;
-  console.log("[Dashboard] smartAccountAddress:", smartAccountAddress, "smartAccountBalance:", smartAccountBalance);
   const sendButtonLabel = () => {
     if (useGaslessMode) {
       if (gaslessLoading) return STEP_LABELS[gaslessStep] || "Processing...";
