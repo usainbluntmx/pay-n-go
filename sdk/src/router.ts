@@ -155,4 +155,32 @@ export class RouterModule {
             await this.publicClient.waitForTransactionReceipt({ hash });
         }
     }
+
+    // ─── Gasless threshold ────────────────────────────────────
+
+    async getGaslessThreshold(): Promise<bigint> {
+        return this.publicClient.readContract({
+            address: this.routerAddress,
+            abi: PAYNGO_ROUTER_ABI,
+            functionName: "gaslessThreshold",
+        }) as Promise<bigint>;
+    }
+
+    async setGaslessThreshold(threshold: bigint): Promise<string> {
+        this._requireWallet();
+        const account = this._getAccount();
+
+        const hash = await this.walletClient!.writeContract({
+            address: this.routerAddress,
+            abi: PAYNGO_ROUTER_ABI,
+            functionName: "setGaslessThreshold",
+            args: [threshold],
+            account,
+            chain: null,
+        });
+
+        await this.publicClient.waitForTransactionReceipt({ hash });
+        return hash;
+    }
+
 }

@@ -218,6 +218,29 @@ export const PAYNGO_ROUTER_ABI = [
             { name: "fee", type: "uint256", indexed: false },
         ],
     },
+
+    {
+        type: "function",
+        name: "gaslessThreshold",
+        stateMutability: "view",
+        inputs: [],
+        outputs: [{ name: "", type: "uint256" }],
+    },
+    {
+        type: "function",
+        name: "setGaslessThreshold",
+        stateMutability: "nonpayable",
+        inputs: [{ name: "_threshold", type: "uint256" }],
+        outputs: [],
+    },
+    {
+        type: "function",
+        name: "isGaslessEligible",
+        stateMutability: "view",
+        inputs: [{ name: "amountIn", type: "uint256" }],
+        outputs: [{ name: "", type: "bool" }],
+    },
+
 ] as const;
 
 export const PAYNGO_GATEWAY_ABI = [

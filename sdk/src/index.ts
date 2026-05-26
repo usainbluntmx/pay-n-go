@@ -46,3 +46,7 @@ export {
 
 // Errores
 export { PayNGoError, ERRORS } from "./errors";
+
+// Gasless module
+export { GaslessModule } from "./gasless";
+export type { GaslessConfig, GaslessTransferParams, GaslessTransferResult } from "./gasless";

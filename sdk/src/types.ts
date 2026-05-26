@@ -143,3 +143,8 @@ export interface AgentPaymentSuggestion {
     estimatedCost: string;
     riskLevel: "low" | "medium" | "high";
 }
+
+export interface PayNGoClientConfig extends PayNGoConfig {
+    pimlicoApiKey?: string;    // opcional — solo necesario para flujo gasless real
+    rpcUrl?: string;
+}

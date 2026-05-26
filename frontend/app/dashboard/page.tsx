@@ -5,6 +5,7 @@ import { useAccount } from "wagmi";
 import { useLinks } from "@/hooks/useLinks";
 import { useRouter } from "@/hooks/useRouter";
 import { useAgent } from "@/hooks/useAgent";
+import { useGasless } from "@/hooks/useGasless";
 import { PaymentLink, LinkStatus, AgentPaymentSuggestion } from "@payngo-labs/sdk";
 
 type Tab = "links" | "send" | "agent";
@@ -29,11 +30,30 @@ const STATUS_LABELS: Record<number, string> = {
   [LinkStatus.Expired]: "expired",
 };
 
+const STEP_LABELS: Record<string, string> = {
+  creating_account: "Creating Smart Account...",
+  checking_balance: "Checking USDC balance...",
+  sending: "Sign the UserOperation...",
+  confirming: "Confirming onchain...",
+  done: "Done!",
+};
+
 export default function DashboardPage() {
   const { address, isConnected } = useAccount();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
   const { createLink, getMyLinks, formatLink, cancelLink, loading: linksLoading, error: linksError } = useLinks();
-  const { executePayment, loading: routerLoading } = useRouter();
+  const { executePayment, getGaslessThreshold, isGaslessEligible, loading: routerLoading, approving: routerApproving } = useRouter();
   const { analyze, execute, loading: agentLoading, error: agentError } = useAgent();
+  const {
+    sendGasless,
+    loading: gaslessLoading,
+    error: gaslessError,
+    step: gaslessStep,
+    smartAccountAddress,
+    smartAccountBalance,
+    reset: resetGasless,
+  } = useGasless();
 
   const [tab, setTab] = useState<Tab>("links");
   const [myLinks, setMyLinks] = useState<PaymentLink[]>([]);
@@ -44,6 +64,12 @@ export default function DashboardPage() {
 
   const [sendForm, setSendForm] = useState({ recipient: "", amount: "" });
   const [sendTx, setSendTx] = useState<string | null>(null);
+  const [gaslessThreshold, setGaslessThreshold] = useState<string>("500");
+  const [gaslessEligible, setGaslessEligible] = useState<boolean>(false);
+
+  // Toggle gasless mode
+  const [useGaslessMode, setUseGaslessMode] = useState(false);
+  const [gaslessTx, setGaslessTx] = useState<string | null>(null);
 
   const [agentInput, setAgentInput] = useState("");
   const [suggestion, setSuggestion] = useState<AgentPaymentSuggestion | null>(null);
@@ -60,6 +86,22 @@ export default function DashboardPage() {
   useEffect(() => {
     if (isConnected) loadLinks();
   }, [isConnected, loadLinks]);
+
+  useEffect(() => {
+    if (isConnected) {
+      getGaslessThreshold().then(setGaslessThreshold);
+    }
+  }, [isConnected, getGaslessThreshold]);
+
+  useEffect(() => {
+    if (sendForm.amount && parseFloat(sendForm.amount) > 0) {
+      isGaslessEligible(sendForm.amount).then(setGaslessEligible);
+    } else {
+      setGaslessEligible(false);
+    }
+  }, [sendForm.amount, isGaslessEligible]);
+
+  // useGasless hook carga la Smart Account automáticamente cuando walletClient está listo
 
   const handleCreateLink = async () => {
     if (!newLink.recipient || !newLink.amount) return;
@@ -85,6 +127,16 @@ export default function DashboardPage() {
     } catch { }
   };
 
+  const handleSendGasless = async () => {
+    if (!sendForm.recipient || !sendForm.amount) return;
+    setGaslessTx(null);
+    try {
+      const result = await sendGasless(sendForm.recipient, sendForm.amount);
+      setGaslessTx(result.txHash);
+      setSendForm({ recipient: "", amount: "" });
+    } catch { }
+  };
+
   const handleAnalyze = async () => {
     if (!agentInput.trim()) return;
     setSuggestion(null);
@@ -101,7 +153,19 @@ export default function DashboardPage() {
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
-  if (!isConnected) {
+  const isSending = routerLoading || gaslessLoading;
+  console.log("[Dashboard] smartAccountAddress:", smartAccountAddress, "smartAccountBalance:", smartAccountBalance);
+  const sendButtonLabel = () => {
+    if (useGaslessMode) {
+      if (gaslessLoading) return STEP_LABELS[gaslessStep] || "Processing...";
+      return "⚡ Send Gasless →";
+    }
+    if (routerApproving) return "Step 1/2: Approving USDC...";
+    if (routerLoading) return "Step 2/2: Sending...";
+    return "Send via Router →";
+  };
+
+  if (!mounted || !isConnected) {
     return (
       <main className="dashboard">
         <div className="grid-bg" />
@@ -263,11 +327,65 @@ export default function DashboardPage() {
         {tab === "send" && (
           <div className="tab-content">
             <div className="card">
-              <h2 className="card-title">Send USDC</h2>
-              <p className="card-desc">
-                Route a payment via PayNGoRouter — automatically finds the optimal path.
-              </p>
-              <div className="form-grid">
+
+              {/* Header con toggle */}
+              <div className="send-header">
+                <div>
+                  <h2 className="card-title" style={{ margin: 0 }}>Send USDC</h2>
+                  <p className="card-desc" style={{ margin: "0.25rem 0 0" }}>
+                    {useGaslessMode
+                      ? "ERC-4337 gasless — you sign once, Pimlico pays gas"
+                      : "Route via PayNGoRouter — optimal path, automatic gasless detection"}
+                  </p>
+                </div>
+                <div className="gasless-toggle-wrap">
+                  <span className="toggle-label">
+                    {useGaslessMode ? "⚡ Gasless" : "⛽ Normal"}
+                  </span>
+                  <button
+                    className={"toggle-btn" + (useGaslessMode ? " active" : "")}
+                    onClick={() => {
+                      setUseGaslessMode(!useGaslessMode);
+                      setSendTx(null);
+                      setGaslessTx(null);
+                      resetGasless();
+                    }}
+                  >
+                    <span className="toggle-dot" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Smart Account info (solo en modo gasless) */}
+              {useGaslessMode && (
+                <div className="smart-account-box">
+                  <div className="sa-row">
+                    <span className="sa-label">Smart Account</span>
+                    <span className="sa-value">
+                      {smartAccountAddress
+                        ? smartAccountAddress.slice(0, 10) + "..." + smartAccountAddress.slice(-6)
+                        : "Calculating..."}
+                    </span>
+                  </div>
+                  <div className="sa-row">
+                    <span className="sa-label">USDC Balance</span>
+                    <span className="sa-value" style={{
+                      color: parseFloat(smartAccountBalance || "0") > 0 ? "#00ffaa" : "#ef4444"
+                    }}>
+                      {smartAccountBalance !== null ? smartAccountBalance + " USDC" : "Loading..."}
+                    </span>
+                  </div>
+                  {parseFloat(smartAccountBalance || "0") === 0 && (
+                    <div className="sa-warning">
+                      ⚠ Fund your Smart Account with USDC to use gasless payments.
+                      Send USDC to the address above from your wallet.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Form */}
+              <div className="form-grid" style={{ marginTop: "1.25rem" }}>
                 <div className="field">
                   <label>Recipient address</label>
                   <input
@@ -287,24 +405,112 @@ export default function DashboardPage() {
                   />
                 </div>
               </div>
-              {sendForm.amount && (
-                <div className="fee-preview">
-                  <span>Protocol fee (0.3%)</span>
-                  <span>{"~" + (parseFloat(sendForm.amount || "0") * 0.003).toFixed(4) + " USDC"}</span>
+
+              {/* Fee + eligibility info */}
+              {sendForm.amount && !useGaslessMode && (
+                <div className="send-info">
+                  <div className="fee-preview">
+                    <span>Protocol fee (0.3%)</span>
+                    <span>{"~" + (parseFloat(sendForm.amount || "0") * 0.003).toFixed(4) + " USDC"}</span>
+                  </div>
+                  <div
+                    className="gasless-preview"
+                    style={{
+                      borderColor: gaslessEligible ? "rgba(0,255,170,0.3)" : "rgba(100,116,139,0.2)",
+                      color: gaslessEligible ? "#00ffaa" : "#475569",
+                    }}
+                  >
+                    <span>{gaslessEligible ? "⚡ Gasless eligible" : "⛽ Gas required"}</span>
+                    <span className="gasless-sub">
+                      {gaslessEligible
+                        ? "Gateway will pay gas"
+                        : "Threshold: " + gaslessThreshold + " USDC max"}
+                    </span>
+                  </div>
                 </div>
               )}
+
+              {sendForm.amount && useGaslessMode && (
+                <div className="send-info">
+                  <div className="fee-preview">
+                    <span>Protocol fee (0.3%)</span>
+                    <span>{"~" + (parseFloat(sendForm.amount || "0") * 0.003).toFixed(4) + " USDC"}</span>
+                  </div>
+                  <div className="gasless-preview" style={{
+                    borderColor: "rgba(0,255,170,0.3)",
+                    color: "#00ffaa",
+                  }}>
+                    <span>⚡ ERC-4337 gasless</span>
+                    <span className="gasless-sub">Pimlico sponsors gas — 0 ETH needed</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Progress steps (solo en modo gasless activo) */}
+              {useGaslessMode && gaslessLoading && (
+                <div className="gasless-progress">
+                  {["creating_account", "checking_balance", "sending", "confirming"].map((s) => {
+                    const steps = ["creating_account", "checking_balance", "sending", "confirming"];
+                    const currentIdx = steps.indexOf(gaslessStep);
+                    const stepIdx = steps.indexOf(s);
+                    const isDone = stepIdx < currentIdx;
+                    const isCurrent = s === gaslessStep;
+                    return (
+                      <div key={s} className={"progress-step" + (isCurrent ? " current" : "") + (isDone ? " done" : "")}>
+                        <span className="step-dot">
+                          {isDone ? "✓" : isCurrent ? "●" : "○"}
+                        </span>
+                        <span className="step-text">{STEP_LABELS[s]}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Errors */}
+              {!useGaslessMode && routerLoading === false && sendTx === null && (
+                null
+              )}
+              {useGaslessMode && gaslessError && (
+                <div className="pay-error" style={{ marginTop: "1rem" }}>
+                  {gaslessError}
+                </div>
+              )}
+
+              {/* Send button */}
               <button
-                className="action-btn"
-                onClick={handleSend}
-                disabled={routerLoading || !sendForm.recipient || !sendForm.amount}
+                className={"action-btn" + (useGaslessMode ? " gasless-btn" : "")}
+                onClick={useGaslessMode ? handleSendGasless : handleSend}
+                disabled={isSending || !sendForm.recipient || !sendForm.amount}
+                style={{ marginTop: "1rem" }}
               >
-                {routerLoading ? "Sending..." : "Send via Router →"}
+                {sendButtonLabel()}
               </button>
-              {sendTx && (
+
+              {/* Success — normal */}
+              {!useGaslessMode && sendTx && (
                 <div className="success-box">
                   <p>Payment sent!</p>
                   <a
                     href={"https://sepolia.etherscan.io/tx/" + sendTx}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="link-url"
+                  >
+                    View on Etherscan →
+                  </a>
+                </div>
+              )}
+
+              {/* Success — gasless */}
+              {useGaslessMode && gaslessTx && (
+                <div className="success-box">
+                  <p>⚡ Gasless payment confirmed!</p>
+                  <p style={{ fontSize: "0.75rem", color: "#475569", margin: "0 0 0.5rem" }}>
+                    Gas was paid by Pimlico Paymaster — you paid 0 ETH
+                  </p>
+                  <a
+                    href={"https://sepolia.etherscan.io/tx/" + gaslessTx}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="link-url"
@@ -499,6 +705,117 @@ function Styles() {
 
       .card-header-row .card-title { margin: 0; }
 
+      /* ─── Send header with toggle ─── */
+      .send-header {
+        display: flex; align-items: flex-start;
+        justify-content: space-between; gap: 1rem;
+        margin-bottom: 0;
+      }
+
+      .gasless-toggle-wrap {
+        display: flex; align-items: center; gap: 0.6rem;
+        flex-shrink: 0; padding-top: 0.1rem;
+      }
+
+      .toggle-label {
+        font-size: 0.72rem; letter-spacing: 0.08em;
+        color: #475569; transition: color 0.2s;
+      }
+
+      .toggle-btn {
+        width: 40px; height: 22px;
+        background: rgba(0,255,170,0.1);
+        border: 1px solid rgba(0,255,170,0.2);
+        border-radius: 11px;
+        cursor: pointer; position: relative;
+        transition: all 0.3s; padding: 0;
+      }
+
+      .toggle-btn.active {
+        background: rgba(0,255,170,0.2);
+        border-color: #00ffaa;
+        box-shadow: 0 0 12px rgba(0,255,170,0.3);
+      }
+
+      .toggle-dot {
+        position: absolute; top: 3px; left: 3px;
+        width: 14px; height: 14px; border-radius: 50%;
+        background: #475569;
+        transition: all 0.3s;
+      }
+
+      .toggle-btn.active .toggle-dot {
+        left: 21px;
+        background: #00ffaa;
+      }
+
+      /* ─── Smart Account box ─── */
+      .smart-account-box {
+        margin-top: 1.25rem;
+        border: 1px solid rgba(0,255,170,0.15);
+        border-radius: 2px;
+        padding: 1rem;
+        background: rgba(0,255,170,0.02);
+      }
+
+      .sa-row {
+        display: flex; justify-content: space-between;
+        align-items: center; padding: 0.4rem 0;
+        font-size: 0.78rem;
+        border-bottom: 1px solid rgba(0,255,170,0.06);
+      }
+
+      .sa-row:last-of-type { border-bottom: none; }
+
+      .sa-label { color: #475569; }
+      .sa-value { color: #e2e8f0; font-family: inherit; }
+
+      .sa-warning {
+        margin-top: 0.75rem;
+        font-size: 0.72rem; color: #f59e0b;
+        padding: 0.6rem 0.85rem;
+        border: 1px solid rgba(245,158,11,0.2);
+        border-radius: 2px;
+        background: rgba(245,158,11,0.05);
+      }
+
+      /* ─── Progress steps ─── */
+      .gasless-progress {
+        margin: 1rem 0;
+        display: flex; flex-direction: column; gap: 0.5rem;
+        padding: 1rem;
+        border: 1px solid rgba(0,255,170,0.1);
+        border-radius: 2px;
+        background: rgba(0,0,0,0.2);
+      }
+
+      .progress-step {
+        display: flex; align-items: center; gap: 0.75rem;
+        font-size: 0.78rem; color: #334155;
+        transition: color 0.2s;
+      }
+
+      .progress-step.done { color: #00ffaa; }
+      .progress-step.current { color: #e2e8f0; }
+
+      .step-dot {
+        font-size: 0.7rem; width: 16px; text-align: center;
+        flex-shrink: 0;
+      }
+
+      .progress-step.current .step-dot {
+        animation: pulse-dot 1s infinite;
+        color: #00ffaa;
+      }
+
+      @keyframes pulse-dot {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+      }
+
+      .step-text { letter-spacing: 0.03em; }
+
+      /* ─── Form ─── */
       .form-grid {
         display: grid; grid-template-columns: 1fr 1fr;
         gap: 1rem; margin-bottom: 1.25rem;
@@ -527,6 +844,7 @@ function Styles() {
         color: #334155;
       }
 
+      /* ─── Buttons ─── */
       .action-btn {
         background: #00ffaa; color: #080b0f;
         border: none; border-radius: 2px;
@@ -544,6 +862,11 @@ function Styles() {
 
       .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+      .gasless-btn {
+        background: linear-gradient(90deg, #00ffaa, #00cc88);
+        box-shadow: 0 0 20px rgba(0,255,170,0.35);
+      }
+
       .refresh-btn {
         background: none; border: 1px solid rgba(0,255,170,0.2);
         color: #00ffaa; font-family: inherit; font-size: 0.75rem;
@@ -553,12 +876,28 @@ function Styles() {
 
       .refresh-btn:hover:not(:disabled) { background: rgba(0,255,170,0.05); }
 
+      /* ─── Info boxes ─── */
+      .send-info { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0; }
+
       .fee-preview {
         display: flex; justify-content: space-between;
         font-size: 0.75rem; color: #475569;
         padding: 0.65rem 0.85rem;
         border: 1px solid rgba(0,255,170,0.05);
-        border-radius: 2px; margin-bottom: 1rem;
+        border-radius: 2px;
+      }
+
+      .gasless-preview {
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 0.75rem; font-weight: 600;
+        padding: 0.65rem 0.85rem;
+        border: 1px solid;
+        border-radius: 2px;
+        transition: all 0.3s;
+      }
+
+      .gasless-sub {
+        font-size: 0.7rem; font-weight: 400; opacity: 0.7;
       }
 
       .success-box {
@@ -580,11 +919,18 @@ function Styles() {
 
       .error-msg { font-size: 0.78rem; color: #ef4444; margin-top: 0.75rem; }
 
+      .pay-error {
+        font-size: 0.78rem; color: #ef4444;
+        padding: 0.75rem; border: 1px solid rgba(239,68,68,0.2);
+        border-radius: 2px;
+      }
+
       .empty-msg {
         font-size: 0.82rem; color: #334155;
         text-align: center; padding: 2rem 0; margin: 0;
       }
 
+      /* ─── Links list ─── */
       .links-list { display: flex; flex-direction: column; gap: 0.5rem; }
 
       .link-row {
@@ -617,6 +963,7 @@ function Styles() {
       .link-action.danger { color: #ef4444; }
       .link-action.danger:hover { background: rgba(239,68,68,0.08); }
 
+      /* ─── Agent ─── */
       .suggestion-box {
         margin-top: 1.25rem; padding: 1.25rem;
         border: 1px solid rgba(0,255,170,0.15);
@@ -658,6 +1005,7 @@ function Styles() {
         .tabs { padding: 0 1rem; }
         .form-grid { grid-template-columns: 1fr; }
         .link-row { flex-wrap: wrap; }
+        .send-header { flex-direction: column; gap: 0.75rem; }
       }
     `}</style>
   );
