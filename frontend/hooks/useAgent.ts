@@ -1,84 +1,340 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { useAccount } from "wagmi";
-import { usePayNGoClient } from "./usePayNGoClient";
-import { PayNGoAgent, AgentResult, AgentPaymentSuggestion } from "@payngo-labs/sdk";
+import { parseUnits, formatUnits, maxUint256, type Address, type Hash } from "viem";
+import { useIdentity } from "./useIdentity";
+import { useHandle } from "./useHandle";
+
+// ─── Tipos ────────────────────────────────────────────────────
+
+export type AgentAction =
+  | "send_usdc"
+  | "create_link"
+  | "check_balance"
+  | "unknown";
+
+export interface AgentSuggestion {
+  action: AgentAction;
+  params: {
+    recipient?: string;           // handle @richi o address 0x...
+    recipientAddress?: string;    // address resuelta
+    amount?: string;              // USDC que recibirá el receptor
+    amountWithFee?: string;       // USDC total que pagará el usuario
+    fee?: string;                 // comisión del protocolo
+    feePercent?: string;          // porcentaje de comisión
+    memo?: string;
+    linkId?: number;
+  };
+  reasoning: string;
+  riskLevel: "low" | "medium" | "high";
+  requiresConfirmation: boolean;
+}
+
+export interface AgentMessage {
+  role: "user" | "agent";
+  content: string;
+  suggestion?: AgentSuggestion;
+  txHash?: string;
+  error?: string;
+  timestamp: number;
+}
+
+export interface AgentState {
+  messages: AgentMessage[];
+  loading: boolean;
+  error: string | null;
+  pendingSuggestion: AgentSuggestion | null;
+  executingTx: boolean;
+}
+
+// ─── Constante de comisión ────────────────────────────────────
+
+const FEE_BPS = 30; // 0.3%
+const BPS_BASE = 10_000;
+
+function calculateFee(amount: string): { amountWithFee: string; fee: string } {
+  const amountFloat = parseFloat(amount);
+  const fee = (amountFloat * FEE_BPS) / BPS_BASE;
+  const amountWithFee = amountFloat + fee;
+  return {
+    fee: fee.toFixed(4),
+    amountWithFee: amountWithFee.toFixed(4),
+  };
+}
+
+// ─── Hook principal ───────────────────────────────────────────
 
 export function useAgent() {
-    const client = usePayNGoClient();
-    const { address } = useAccount();
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [lastSuggestion, setLastSuggestion] = useState<AgentPaymentSuggestion | null>(null);
+  const { identity, getSmartAccountClient, refreshBalance } = useIdentity();
+  const { resolveHandle } = useHandle();
 
-    // ─── Analizar instrucción ────────────────────────────────────
+  const [state, setState] = useState<AgentState>({
+    messages: [],
+    loading: false,
+    error: null,
+    pendingSuggestion: null,
+    executingTx: false,
+  });
 
-    const analyze = useCallback(async (
-        instruction: string
-    ): Promise<AgentResult | null> => {
-        if (!client || !address) return null;
-        setLoading(true);
-        setError(null);
+  // ─── Agregar mensaje ──────────────────────────────────────────
 
-        try {
-            const agent = new PayNGoAgent({
-                client,
-                anthropicApiKey: "",
-                apiUrl: "/api/agent",
-                verbose: false,
-            });
+  const addMessage = useCallback((msg: Omit<AgentMessage, "timestamp">) => {
+    setState(prev => ({
+      ...prev,
+      messages: [...prev.messages, { ...msg, timestamp: Date.now() }],
+    }));
+  }, []);
 
-            const result = await agent.processInstruction(
-                instruction,
-                { userAddress: address },
-                false
-            );
+  // ─── Llamar al agente (Claude) ────────────────────────────────
 
-            setLastSuggestion(result.suggestion);
-            return result;
-        } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            setError(msg);
-            return null;
-        } finally {
-            setLoading(false);
+  const processInstruction = useCallback(async (instruction: string) => {
+    if (!identity) {
+      addMessage({
+        role: "agent",
+        content: "No tienes una cuenta activa. Por favor crea o recupera tu cuenta primero.",
+      });
+      return;
+    }
+
+    // Agregar mensaje del usuario
+    addMessage({ role: "user", content: instruction });
+
+    setState(prev => ({ ...prev, loading: true, error: null, pendingSuggestion: null }));
+
+    try {
+      const systemPrompt = `Eres el AI Payment Agent de Pay'n Go — una app de pagos en USDC para usuarios no técnicos.
+
+Tu trabajo es interpretar instrucciones de pago en lenguaje natural y devolver una acción estructurada.
+
+Usuario actual:
+- Handle: ${identity.handle ? "@" + identity.handle : "sin handle"}
+- Smart Account: ${identity.smartAccountAddress}
+
+Acciones disponibles:
+1. send_usdc — Enviar USDC a otro usuario (por handle @nombre o address 0x...)
+2. create_link — Crear un link de pago que otros pueden pagar
+3. check_balance — Consultar el balance actual
+4. unknown — Si la instrucción no es clara
+
+REGLAS IMPORTANTES:
+- Si el usuario menciona un @handle como destinatario, ponlo en recipient como "@handle"
+- Si el usuario menciona una address 0x..., ponla en recipient como la address
+- El campo amount es EXACTAMENTE lo que recibirá el destinatario
+- NUNCA inventes addresses ni handles
+- Si falta información (destinatario o monto), action debe ser "unknown" y en reasoning explica qué falta
+- riskLevel: "low" si amount < 100, "medium" si 100-500, "high" si > 500
+- requiresConfirmation: siempre true para send_usdc y create_link
+
+Responde ÚNICAMENTE con JSON válido, sin markdown:
+{
+  "action": "send_usdc" | "create_link" | "check_balance" | "unknown",
+  "params": {
+    "recipient": "@handle o 0x...",
+    "amount": "10.00",
+    "memo": "razón del pago"
+  },
+  "reasoning": "explicación breve en español",
+  "riskLevel": "low" | "medium" | "high",
+  "requiresConfirmation": true
+}`;
+
+      const response = await fetch("/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 512,
+          system: systemPrompt,
+          messages: [{ role: "user", content: instruction }],
+        }),
+      });
+
+      const data = await response.json();
+      const raw = data.content
+        ?.filter((b: { type: string }) => b.type === "text")
+        ?.map((b: { text: string }) => b.text)
+        ?.join("") || "";
+
+      const clean = raw.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(clean) as AgentSuggestion;
+
+      // Resolver handle → address si aplica
+      if (parsed.params.recipient) {
+        const resolved = await resolveHandle(parsed.params.recipient);
+        parsed.params.recipientAddress = resolved || undefined;
+
+        if (parsed.action === "send_usdc" && !resolved) {
+          // Handle no encontrado
+          addMessage({
+            role: "agent",
+            content: `No encontré el usuario "${parsed.params.recipient}". Verifica que el handle o address sea correcto.`,
+          });
+          setState(prev => ({ ...prev, loading: false }));
+          return;
         }
-    }, [client, address]);
+      }
 
-    // ─── Ejecutar sugerencia ─────────────────────────────────────
+      // Calcular comisión de forma transparente
+      if (parsed.action === "send_usdc" && parsed.params.amount) {
+        const { fee, amountWithFee } = calculateFee(parsed.params.amount);
+        parsed.params.fee = fee;
+        parsed.params.amountWithFee = amountWithFee;
+        parsed.params.feePercent = "0.3";
+      }
 
-    const execute = useCallback(async (
-        suggestion: AgentPaymentSuggestion
-    ): Promise<AgentResult | null> => {
-        if (!client || !address) return null;
-        setLoading(true);
-        setError(null);
+      // Construir mensaje de respuesta
+      let agentMessage = parsed.reasoning;
 
-        try {
-            const agent = new PayNGoAgent({
-                client,
-                anthropicApiKey: "",
-                apiUrl: "/api/agent",
-                verbose: false,
-            });
+      if (parsed.action === "send_usdc" && parsed.params.amount) {
+        const recipient = parsed.params.recipient || "";
+        agentMessage = `Entendido. Quieres enviar **${parsed.params.amount} USDC** a **${recipient}**`;
+        if (parsed.params.memo) agentMessage += ` por "${parsed.params.memo}"`;
+        agentMessage += `.\n\n`;
+        agentMessage += `📋 **Resumen:**\n`;
+        agentMessage += `• El receptor recibirá: **${parsed.params.amount} USDC**\n`;
+        agentMessage += `• Comisión del servicio (0.3%): **${parsed.params.fee} USDC**\n`;
+        agentMessage += `• **Total que saldrá de tu cuenta: ${parsed.params.amountWithFee} USDC**\n\n`;
+        agentMessage += `¿Confirmas el envío?`;
+      } else if (parsed.action === "create_link" && parsed.params.amount) {
+        agentMessage = `Voy a crear un link de pago de **${parsed.params.amount} USDC**`;
+        if (parsed.params.memo) agentMessage += ` para "${parsed.params.memo}"`;
+        agentMessage += `. ¿Confirmas?`;
+      } else if (parsed.action === "check_balance") {
+        agentMessage = parsed.reasoning;
+      }
 
-            const result = await agent.executeSuggestion(suggestion, address);
-            return result;
-        } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            setError(msg);
-            return null;
-        } finally {
-            setLoading(false);
-        }
-    }, [client, address]);
+      addMessage({
+        role: "agent",
+        content: agentMessage,
+        suggestion: parsed,
+      });
 
-    return {
-        analyze,
-        execute,
-        lastSuggestion,
-        loading,
-        error,
-    };
+      if (parsed.requiresConfirmation) {
+        setState(prev => ({
+          ...prev,
+          loading: false,
+          pendingSuggestion: parsed,
+        }));
+      } else {
+        setState(prev => ({ ...prev, loading: false }));
+      }
+
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      addMessage({
+        role: "agent",
+        content: "Tuve un problema procesando tu instrucción. ¿Puedes reformularla?",
+      });
+      setState(prev => ({ ...prev, loading: false, error: msg }));
+    }
+  }, [identity, resolveHandle, addMessage]);
+
+  // ─── Ejecutar sugerencia confirmada ──────────────────────────
+
+  const executeSuggestion = useCallback(async (suggestion: AgentSuggestion) => {
+    if (!identity) return;
+
+    setState(prev => ({ ...prev, executingTx: true, pendingSuggestion: null }));
+
+    addMessage({
+      role: "agent",
+      content: "Ejecutando el pago...",
+    });
+
+    try {
+      const { smartAccountClient, safeAccount } = await getSmartAccountClient();
+
+      if (suggestion.action === "send_usdc") {
+        const { recipientAddress, amountWithFee } = suggestion.params;
+        if (!recipientAddress || !amountWithFee) throw new Error("Faltan datos del pago");
+
+        const USDC = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as Address;
+        const ROUTER = "0x52e5d621290F9941254d42F8AB905E3fAB32f6F1" as Address;
+
+        const ERC20_ABI = [
+          { type: "function", name: "approve", stateMutability: "nonpayable", inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ name: "", type: "bool" }] },
+        ] as const;
+
+        const ROUTER_ABI = [
+          { type: "function", name: "executePayment", stateMutability: "nonpayable", inputs: [{ name: "order", type: "tuple", components: [{ name: "sender", type: "address" }, { name: "recipient", type: "address" }, { name: "tokenIn", type: "address" }, { name: "tokenOut", type: "address" }, { name: "amountIn", type: "uint256" }, { name: "minAmountOut", type: "uint256" }, { name: "routeId", type: "uint256" }, { name: "deadline", type: "uint256" }, { name: "orderId", type: "bytes32" }] }], outputs: [{ name: "orderId", type: "bytes32" }] },
+        ] as const;
+
+        const amountBigInt = parseUnits(amountWithFee, 6);
+        const minAmountOut = (amountBigInt * 99n) / 100n;
+
+        // Obtener block para deadline
+        const { createPublicClient, http } = await import("viem");
+        const { sepolia } = await import("viem/chains");
+        const publicClient = createPublicClient({ chain: sepolia, transport: http(process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || "") });
+        const block = await publicClient.getBlock();
+        const deadline = block.timestamp + 3600n;
+
+        const userOpHash = await (smartAccountClient as never as {
+          sendUserOperation: (params: { calls: unknown[] }) => Promise<Hash>;
+        }).sendUserOperation({
+          calls: [
+            { to: USDC, abi: ERC20_ABI, functionName: "approve", args: [ROUTER, maxUint256] },
+            { to: ROUTER, abi: ROUTER_ABI, functionName: "executePayment", args: [{ sender: safeAccount.address, recipient: recipientAddress as Address, tokenIn: USDC, tokenOut: USDC, amountIn: amountBigInt, minAmountOut, routeId: 0n, deadline, orderId: "0x0000000000000000000000000000000000000000000000000000000000000000" as Hash }] },
+          ],
+        });
+
+        const receipt = await (smartAccountClient as never as {
+          waitForUserOperationReceipt: (params: { hash: Hash }) => Promise<{ receipt: { transactionHash: Hash } }>;
+        }).waitForUserOperationReceipt({ hash: userOpHash });
+
+        const txHash = receipt.receipt.transactionHash;
+
+        // Actualizar balance
+        await refreshBalance();
+
+        addMessage({
+          role: "agent",
+          content: `✅ Pago enviado exitosamente. **${suggestion.params.amount} USDC** llegaron a **${suggestion.params.recipient}**. Gas pagado por Pimlico — sin costo para ti.`,
+          txHash,
+        });
+
+      } else if (suggestion.action === "create_link") {
+        // Por ahora placeholder — implementar en Día 5
+        addMessage({
+          role: "agent",
+          content: "La creación de links via agente estará disponible pronto.",
+        });
+      }
+
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      addMessage({
+        role: "agent",
+        content: `❌ No pude ejecutar el pago: ${msg}`,
+        error: msg,
+      });
+    } finally {
+      setState(prev => ({ ...prev, executingTx: false }));
+    }
+  }, [identity, getSmartAccountClient, refreshBalance, addMessage]);
+
+  // ─── Cancelar sugerencia pendiente ───────────────────────────
+
+  const cancelSuggestion = useCallback(() => {
+    setState(prev => ({ ...prev, pendingSuggestion: null }));
+    addMessage({
+      role: "agent",
+      content: "Entendido, cancelé el pago. ¿En qué más puedo ayudarte?",
+    });
+  }, [addMessage]);
+
+  // ─── Limpiar historial ────────────────────────────────────────
+
+  const clearMessages = useCallback(() => {
+    setState(prev => ({ ...prev, messages: [], pendingSuggestion: null }));
+  }, []);
+
+  return {
+    ...state,
+    processInstruction,
+    executeSuggestion,
+    cancelSuggestion,
+    clearMessages,
+    isReady: !!identity,
+  };
 }
