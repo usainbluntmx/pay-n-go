@@ -1,4 +1,4 @@
-const CACHE_NAME = "payngo-v1";
+const CACHE_NAME = "payngo-v2";
 const STATIC_ASSETS = [
   "/",
   "/dashboard",
