@@ -20,6 +20,7 @@ export default function DashboardPage() {
   const [input, setInput] = useState("");
   const [mounted, setMounted] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [showContacts, setShowContacts] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -87,6 +88,12 @@ export default function DashboardPage() {
         <div className="header-top">
           <span className="dash-logo">PAY<span className="accent">&apos;N</span>GO</span>
           <div className="header-actions">
+            <button className="contacts-btn" onClick={() => setShowContacts(true)} title="Contactos">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="9" cy="6" r="3" stroke="currentColor" strokeWidth="1.5"/>
+                <path d="M2 15c0-3.314 3.134-6 7-6s7 2.686 7 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </button>
             <div className="identity-chip">
               {identity.handle
                 ? <span className="handle-display">@{identity.handle}</span>
@@ -105,7 +112,12 @@ export default function DashboardPage() {
               {balance !== null ? balance : "—"}
             </span>
             <span className="balance-currency">USDC</span>
-            <button className="refresh-btn-sm" onClick={refreshBalance} title="Actualizar">↻</button>
+            <button className="refresh-btn-sm" onClick={refreshBalance} title="Actualizar balance">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M15.5 9A6.5 6.5 0 1 1 9 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                <path d="M9 2.5L12 5.5M9 2.5L12 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
           </div>
         </div>
       </header>
@@ -126,6 +138,11 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ─── CONTACTS DRAWER ─── */}
+      {showContacts && (
+        <ContactsDrawer onClose={() => setShowContacts(false)} />
       )}
 
       {/* ─── CHAT ─── */}
@@ -200,8 +217,12 @@ export default function DashboardPage() {
         {/* ─── INPUT ─── */}
         <div className="input-area">
           {messages.length > 0 && (
-            <button className="clear-btn" onClick={clearMessages} title="Limpiar chat">
-              ⊗
+            <button className="clear-btn" onClick={clearMessages} title="Volver al inicio">
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="11" cy="11" r="10" stroke="currentColor" strokeWidth="1.5"/>
+                <line x1="7" y1="7" x2="15" y2="15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                <line x1="15" y1="7" x2="7" y2="15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
             </button>
           )}
           <textarea
@@ -272,6 +293,115 @@ function MessageBubble({ message }: { message: AgentMessage }) {
         {message.error && (
           <p className="bubble-error">{message.error}</p>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Contacts Drawer ─────────────────────────────────────────
+
+interface Contact {
+  alias: string;
+  handle: string;
+  addedAt: number;
+}
+
+const CONTACTS_KEY = "payngo_contacts";
+
+function loadContacts(): Contact[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem(CONTACTS_KEY) || "[]");
+  } catch { return []; }
+}
+
+function saveContacts(contacts: Contact[]) {
+  localStorage.setItem(CONTACTS_KEY, JSON.stringify(contacts));
+}
+
+function ContactsDrawer({ onClose }: { onClose: () => void }) {
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [alias, setAlias] = useState("");
+  const [handle, setHandle] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setContacts(loadContacts());
+  }, []);
+
+  const addContact = () => {
+    setError(null);
+    const cleanHandle = handle.replace(/^@/, "").toLowerCase().trim();
+    const cleanAlias = alias.trim();
+    if (!cleanAlias) { setError("El alias no puede estar vacío"); return; }
+    if (!cleanHandle) { setError("El handle no puede estar vacío"); return; }
+    if (contacts.some(c => c.handle === cleanHandle)) { setError("Este handle ya está en tus contactos"); return; }
+
+    const updated = [...contacts, { alias: cleanAlias, handle: cleanHandle, addedAt: Date.now() }];
+    setContacts(updated);
+    saveContacts(updated);
+    setAlias("");
+    setHandle("");
+  };
+
+  const removeContact = (h: string) => {
+    const updated = contacts.filter(c => c.handle !== h);
+    setContacts(updated);
+    saveContacts(updated);
+  };
+
+  return (
+    <div className="drawer-overlay" onClick={onClose}>
+      <div className="drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="drawer-header">
+          <h2 className="drawer-title">Contactos</h2>
+          <button className="drawer-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="drawer-add">
+          <p className="drawer-section-label">Agregar contacto</p>
+          <div className="drawer-field">
+            <input
+              className="drawer-input"
+              value={alias}
+              onChange={(e) => setAlias(e.target.value)}
+              placeholder="Alias (ej. Carlos Vecino)"
+            />
+          </div>
+          <div className="drawer-field handle-field">
+            <span className="handle-at-sm">@</span>
+            <input
+              className="drawer-input"
+              value={handle}
+              onChange={(e) => setHandle(e.target.value.replace(/^@/, "").toLowerCase())}
+              placeholder="handle"
+            />
+          </div>
+          {error && <p className="drawer-error">{error}</p>}
+          <button
+            className="drawer-add-btn"
+            onClick={addContact}
+            disabled={!alias.trim() || !handle.trim()}
+          >
+            + Agregar
+          </button>
+        </div>
+
+        <div className="drawer-list">
+          {contacts.length === 0 ? (
+            <p className="drawer-empty">Aún no tienes contactos guardados.</p>
+          ) : (
+            contacts.map((c) => (
+              <div key={c.handle} className="drawer-contact">
+                <div className="contact-info">
+                  <span className="contact-alias">{c.alias}</span>
+                  <span className="contact-handle">@{c.handle}</span>
+                </div>
+                <button className="contact-remove" onClick={() => removeContact(c.handle)}>✕</button>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );
@@ -543,11 +673,13 @@ function Styles() {
       }
 
       .clear-btn {
-        background: none; border: none; color: #334155;
-        font-size: 1rem; cursor: pointer; padding: 0.5rem;
+        background: none; border: none; color: #475569;
+        cursor: pointer; padding: 0.5rem;
         transition: color 0.2s; flex-shrink: 0;
-        align-self: center;
+        align-self: center; display: flex; align-items: center;
       }
+
+      .clear-btn:hover { color: #ef4444; }
 
       .clear-btn:hover { color: #ef4444; }
 
@@ -659,6 +791,146 @@ function Styles() {
       }
 
       .address-copy-btn:hover { color: #00ffaa; }
+
+      /* ─── Contacts button ─── */
+      .contacts-btn {
+        background: none; border: none; color: #475569;
+        cursor: pointer; padding: 0.35rem; transition: color 0.2s;
+        display: flex; align-items: center;
+      }
+
+      .contacts-btn:hover { color: #00ffaa; }
+
+      /* ─── Refresh button sm ─── */
+      .refresh-btn-sm {
+        background: none; border: none; color: #475569;
+        cursor: pointer; padding: 0.3rem;
+        transition: color 0.2s; display: flex; align-items: center;
+      }
+
+      .refresh-btn-sm:hover { color: #00ffaa; }
+
+      /* ─── Contacts drawer ─── */
+      .drawer-overlay {
+        position: fixed; inset: 0; z-index: 100;
+        background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+      }
+
+      .drawer {
+        position: absolute; top: 0; right: 0; bottom: 0;
+        width: min(340px, 90vw);
+        background: #0d1117;
+        border-left: 1px solid rgba(0,255,170,0.15);
+        display: flex; flex-direction: column;
+        overflow: hidden;
+        animation: slide-in 0.2s ease;
+      }
+
+      @keyframes slide-in {
+        from { transform: translateX(100%); }
+        to { transform: translateX(0); }
+      }
+
+      .drawer-header {
+        display: flex; align-items: center;
+        justify-content: space-between;
+        padding: 1.25rem;
+        padding-top: calc(1.25rem + env(safe-area-inset-top, 0px));
+        border-bottom: 1px solid rgba(0,255,170,0.08);
+        flex-shrink: 0;
+      }
+
+      .drawer-title {
+        font-size: 0.9rem; font-weight: 700;
+        color: #f8fafc; margin: 0; letter-spacing: 0.05em;
+      }
+
+      .drawer-close {
+        background: none; border: none; color: #475569;
+        font-size: 1rem; cursor: pointer; padding: 0.25rem;
+        transition: color 0.2s;
+      }
+
+      .drawer-close:hover { color: #e2e8f0; }
+
+      .drawer-add {
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid rgba(0,255,170,0.08);
+        display: flex; flex-direction: column; gap: 0.6rem;
+        flex-shrink: 0;
+      }
+
+      .drawer-section-label {
+        font-size: 0.68rem; color: #475569;
+        letter-spacing: 0.1em; text-transform: uppercase; margin: 0;
+      }
+
+      .handle-field {
+        display: flex; align-items: center;
+        border: 1px solid rgba(0,255,170,0.1); border-radius: 2px;
+        background: rgba(0,255,170,0.03); padding: 0 0.75rem;
+      }
+
+      .handle-at-sm {
+        color: #00ffaa; font-size: 0.88rem; font-weight: 700;
+        flex-shrink: 0; padding-right: 0.2rem;
+      }
+
+      .drawer-input {
+        width: 100%; background: rgba(0,255,170,0.03);
+        border: 1px solid rgba(0,255,170,0.1); border-radius: 2px;
+        padding: 0.6rem 0.75rem; font-family: inherit;
+        font-size: 0.82rem; color: #e2e8f0; outline: none;
+        transition: border-color 0.2s;
+      }
+
+      .handle-field .drawer-input {
+        border: none; background: none; padding: 0.6rem 0;
+      }
+
+      .drawer-input:focus { border-color: rgba(0,255,170,0.35); }
+      .drawer-input::placeholder { color: #334155; }
+
+      .drawer-error { font-size: 0.72rem; color: #ef4444; margin: 0; }
+
+      .drawer-add-btn {
+        background: #00ffaa; color: #080b0f;
+        border: none; border-radius: 2px; padding: 0.65rem;
+        font-family: inherit; font-size: 0.82rem; font-weight: 700;
+        cursor: pointer; transition: all 0.2s;
+      }
+
+      .drawer-add-btn:hover:not(:disabled) { background: #00cc88; }
+      .drawer-add-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+      .drawer-list {
+        flex: 1; overflow-y: auto; padding: 0.75rem 1.25rem;
+        display: flex; flex-direction: column; gap: 0.5rem;
+      }
+
+      .drawer-empty {
+        font-size: 0.78rem; color: #334155;
+        text-align: center; padding: 1.5rem 0; margin: 0;
+      }
+
+      .drawer-contact {
+        display: flex; align-items: center;
+        justify-content: space-between;
+        padding: 0.7rem 0.85rem;
+        border: 1px solid rgba(0,255,170,0.07); border-radius: 2px;
+      }
+
+      .contact-info { display: flex; flex-direction: column; gap: 0.15rem; }
+      .contact-alias { font-size: 0.82rem; color: #e2e8f0; font-weight: 500; }
+      .contact-handle { font-size: 0.7rem; color: #475569; }
+
+      .contact-remove {
+        background: none; border: none; color: #334155;
+        font-size: 0.75rem; cursor: pointer; padding: 0.25rem;
+        transition: color 0.2s;
+      }
+
+      .contact-remove:hover { color: #ef4444; }
 
       @media (max-width: 640px) {
         .dash-header { padding: 0.85rem 1rem 1rem; }
