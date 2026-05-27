@@ -3,9 +3,10 @@
 import { useState, useEffect, useRef } from "react";
 import { useIdentity } from "@/hooks/useIdentity";
 import { useAgent, AgentMessage } from "@/hooks/useAgent";
+import { useHandle } from "@/hooks/useHandle";
 
 export default function DashboardPage() {
-  const { identity, balance, refreshBalance, logout, isReady } = useIdentity();
+  const { identity, balance, refreshBalance, logout, setHandle, isReady } = useIdentity();
   const {
     messages,
     loading,
@@ -21,6 +22,7 @@ export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [showContacts, setShowContacts] = useState(false);
+  const [showHandleModal, setShowHandleModal] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -143,6 +145,30 @@ export default function DashboardPage() {
       {/* ─── CONTACTS DRAWER ─── */}
       {showContacts && (
         <ContactsDrawer onClose={() => setShowContacts(false)} />
+      )}
+
+      {/* ─── HANDLE MODAL ─── */}
+      {showHandleModal && (
+        <HandleModal
+          identity={identity}
+          onComplete={(handle) => {
+            setHandle(handle);
+            setShowHandleModal(false);
+          }}
+          onClose={() => setShowHandleModal(false)}
+        />
+      )}
+
+      {/* ─── HANDLE BANNER ─── */}
+      {!identity.handle && (
+        <div className="handle-banner">
+          <span className="handle-banner-text">
+            ✦ Elige tu @handle para recibir pagos fácilmente
+          </span>
+          <button className="handle-banner-btn" onClick={() => setShowHandleModal(true)}>
+            Elegir →
+          </button>
+        </div>
       )}
 
       {/* ─── CHAT ─── */}
@@ -293,6 +319,75 @@ function MessageBubble({ message }: { message: AgentMessage }) {
         {message.error && (
           <p className="bubble-error">{message.error}</p>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Handle Modal ─────────────────────────────────────────────
+
+function HandleModal({ identity, onComplete, onClose }: {
+  identity: { smartAccountAddress: string };
+  onComplete: (handle: string) => void;
+  onClose: () => void;
+}) {
+  const { checkAvailability, registerHandle, loading, available } = useHandle();
+  const [handleInput, setHandleInput] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!handleInput || handleInput.length < 3) return;
+    const timer = setTimeout(() => checkAvailability(handleInput), 500);
+    return () => clearTimeout(timer);
+  }, [handleInput, checkAvailability]);
+
+  const handleStatus = !handleInput || handleInput.length < 3 ? null
+    : loading ? "checking"
+    : available === true ? "available"
+    : available === false ? "taken"
+    : null;
+
+  const submit = async () => {
+    if (!handleInput || handleStatus !== "available") return;
+    setError(null);
+    const ok = await registerHandle(handleInput, identity.smartAccountAddress);
+    if (!ok) { setError("No se pudo registrar. Intenta de nuevo."); return; }
+    onComplete(handleInput.toLowerCase());
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <p className="modal-title">Elige tu @handle</p>
+        <p className="modal-desc">
+          Tu handle es tu identidad en Pay&apos;n Go. Otros te enviarán pagos escribiendo @tuhandle.
+        </p>
+        <div className="handle-input-wrap" style={{ width: "100%", marginBottom: "0.5rem" }}>
+          <span style={{ color: "#00ffaa", fontWeight: 700, paddingRight: "0.25rem" }}>@</span>
+          <input
+            style={{ flex: 1, background: "none", border: "none", outline: "none", fontFamily: "inherit", fontSize: "0.9rem", color: "#e2e8f0", padding: "0.75rem 0" }}
+            value={handleInput}
+            onChange={(e) => { setHandleInput(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "")); setError(null); }}
+            placeholder="tuhandle"
+            maxLength={20}
+            autoFocus
+          />
+          {handleStatus === "checking" && <span style={{ color: "#475569", fontSize: "0.85rem" }}>...</span>}
+          {handleStatus === "available" && <span style={{ color: "#00ffaa", fontSize: "0.85rem", fontWeight: 700 }}>✓</span>}
+          {handleStatus === "taken" && <span style={{ color: "#ef4444", fontSize: "0.85rem", fontWeight: 700 }}>✗</span>}
+        </div>
+        {handleStatus === "available" && <p style={{ fontSize: "0.72rem", color: "#00ffaa", margin: "0 0 0.5rem", alignSelf: "flex-start" }}>@{handleInput} está disponible</p>}
+        {handleStatus === "taken" && <p style={{ fontSize: "0.72rem", color: "#ef4444", margin: "0 0 0.5rem", alignSelf: "flex-start" }}>@{handleInput} ya está en uso</p>}
+        {error && <p style={{ fontSize: "0.72rem", color: "#ef4444", margin: "0 0 0.5rem" }}>{error}</p>}
+        <div className="modal-actions">
+          <button className="modal-btn-danger" style={{ background: "#00ffaa", color: "#080b0f", borderColor: "transparent" }}
+            onClick={submit}
+            disabled={loading || handleStatus !== "available"}
+          >
+            {loading ? "Registrando..." : "Registrar →"}
+          </button>
+          <button className="modal-btn-ghost" onClick={onClose}>Omitir</button>
+        </div>
       </div>
     </div>
   );
@@ -792,7 +887,40 @@ function Styles() {
 
       .address-copy-btn:hover { color: #00ffaa; }
 
-      /* ─── Contacts button ─── */
+      /* ─── Handle banner ─── */
+      .handle-banner {
+        position: relative; z-index: 9;
+        display: flex; align-items: center;
+        justify-content: space-between;
+        padding: 0.6rem 1.5rem;
+        background: rgba(0,255,170,0.07);
+        border-bottom: 1px solid rgba(0,255,170,0.15);
+        flex-shrink: 0;
+      }
+
+      .handle-banner-text {
+        font-size: 0.75rem; color: #00ffaa; letter-spacing: 0.03em;
+      }
+
+      .handle-banner-btn {
+        background: #00ffaa; color: #080b0f;
+        border: none; border-radius: 2px;
+        padding: 0.3rem 0.75rem; font-family: inherit;
+        font-size: 0.72rem; font-weight: 700;
+        cursor: pointer; transition: all 0.2s; flex-shrink: 0;
+      }
+
+      .handle-banner-btn:hover { background: #00cc88; }
+
+      /* ─── Handle input wrap (shared) ─── */
+      .handle-input-wrap {
+        display: flex; align-items: center;
+        border: 1px solid rgba(0,255,170,0.2); border-radius: 2px;
+        background: rgba(0,255,170,0.03); padding: 0 0.85rem;
+        transition: border-color 0.2s;
+      }
+
+      .handle-input-wrap:focus-within { border-color: rgba(0,255,170,0.5); }
       .contacts-btn {
         background: none; border: none; color: #475569;
         cursor: pointer; padding: 0.35rem; transition: color 0.2s;

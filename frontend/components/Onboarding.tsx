@@ -84,7 +84,8 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     const words = recoverInput.trim().toLowerCase();
     try {
       await recoverIdentity(words);
-      onComplete();
+      // Después de recuperar, ofrecer registrar handle
+      setScreen("handle");
     } catch (e) {
       setRecoverError(e instanceof Error ? e.message : "Error al recuperar");
     }

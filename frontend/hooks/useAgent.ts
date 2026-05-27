@@ -232,7 +232,14 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
         }
         parsed.requiresConfirmation = false;
       } else if (parsed.action === "unknown") {
-        agentMessage = parsed.reasoning;
+        const lc = instruction.toLowerCase();
+        if (lc.includes("a quien") || lc.includes("a quién") || lc.includes("quien puedo")) {
+          agentMessage = `Puedes enviarle USDC a cualquier persona que tenga un @handle en Pay'n Go.\n\nSolo dime algo como:\n**"Envía 10 USDC a @carlos por el diseño"**\n\ny yo me encargo del resto. ✦`;
+        } else if (lc.includes("cómo") || lc.includes("como") || lc.includes("qué puedo") || lc.includes("que puedo") || lc.includes("ayuda")) {
+          agentMessage = `Puedo ayudarte a:\n\n• **Enviar USDC** — "Envía 10 USDC a @carlos"\n• **Crear un link de pago** — "Crea un link de 50 USDC para la renta"\n\n¿Qué quieres hacer?`;
+        } else {
+          agentMessage = `No entendí bien esa instrucción. Intenta algo como:\n\n**"Envía 10 USDC a @carlos por el diseño"**\n\n¿Te puedo ayudar con algo más?`;
+        }
         parsed.requiresConfirmation = false;
       }
 
