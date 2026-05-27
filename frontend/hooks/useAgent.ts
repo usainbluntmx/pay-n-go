@@ -65,7 +65,7 @@ function calculateFee(amount: string): { amountWithFee: string; fee: string } {
 // ─── Hook principal ───────────────────────────────────────────
 
 export function useAgent() {
-  const { identity, getSmartAccountClient, refreshBalance } = useIdentity();
+  const { identity, balance, getSmartAccountClient, refreshBalance } = useIdentity();
   const { resolveHandle } = useHandle();
 
   const [state, setState] = useState<AgentState>({
@@ -123,7 +123,8 @@ REGLAS IMPORTANTES:
 - NUNCA inventes addresses ni handles
 - Si falta información (destinatario o monto), action debe ser "unknown" y en reasoning explica qué falta
 - riskLevel: "low" si amount < 100, "medium" si 100-500, "high" si > 500
-- requiresConfirmation: siempre true para send_usdc y create_link
+- requiresConfirmation: true SOLO para send_usdc y create_link, false para check_balance y unknown
+- Para check_balance y unknown: "requiresConfirmation": false
 
 Responde ÚNICAMENTE con JSON válido, sin markdown:
 {
@@ -182,6 +183,14 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
         parsed.params.feePercent = "0.3";
       }
 
+      // Forzar requiresConfirmation en el código — no depender de Claude
+      if (parsed.action === "check_balance" || parsed.action === "unknown") {
+        parsed.requiresConfirmation = false;
+      }
+      if (parsed.action === "send_usdc" || parsed.action === "create_link") {
+        parsed.requiresConfirmation = true;
+      }
+
       // Construir mensaje de respuesta
       let agentMessage = parsed.reasoning;
 
@@ -200,7 +209,31 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
         if (parsed.params.memo) agentMessage += ` para "${parsed.params.memo}"`;
         agentMessage += `. ¿Confirmas?`;
       } else if (parsed.action === "check_balance") {
+        // Obtener balance fresco directo de la chain
+        let currentBalance = balance;
+        try {
+          const { createPublicClient, http, formatUnits } = await import("viem");
+          const { sepolia } = await import("viem/chains");
+          const USDC_ADDR = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
+          const BALANCE_ABI = [{ type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
+          const pc = createPublicClient({ chain: sepolia, transport: http(process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || "") });
+          const raw = await pc.readContract({ address: USDC_ADDR as `0x${string}`, abi: BALANCE_ABI, functionName: "balanceOf", args: [identity.smartAccountAddress as `0x${string}`] }) as bigint;
+          currentBalance = formatUnits(raw, 6);
+          // Actualizar el estado del hook de identidad también
+          refreshBalance();
+        } catch {
+          currentBalance = balance;
+        }
+
+        const balanceDisplay = currentBalance !== null ? currentBalance : "desconocido";
+        agentMessage = `Tu balance actual es **${balanceDisplay} USDC**.`;
+        if (!currentBalance || parseFloat(currentBalance) === 0) {
+          agentMessage += `\n\nAún no tienes fondos. Para recibir USDC comparte tu dirección:\n**${identity.smartAccountAddress}**`;
+        }
+        parsed.requiresConfirmation = false;
+      } else if (parsed.action === "unknown") {
         agentMessage = parsed.reasoning;
+        parsed.requiresConfirmation = false;
       }
 
       addMessage({
@@ -227,7 +260,7 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
       });
       setState(prev => ({ ...prev, loading: false, error: msg }));
     }
-  }, [identity, resolveHandle, addMessage]);
+  }, [identity, balance, resolveHandle, addMessage]);
 
   // ─── Ejecutar sugerencia confirmada ──────────────────────────
 

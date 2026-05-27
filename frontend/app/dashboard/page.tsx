@@ -19,6 +19,7 @@ export default function DashboardPage() {
 
   const [input, setInput] = useState("");
   const [mounted, setMounted] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -36,6 +37,15 @@ export default function DashboardPage() {
       // No llamamos al agente — solo mostramos el placeholder en el input
     }
   }, [mounted, isReady, messages.length, identity]);
+
+  const [copied, setCopied] = useState(false);
+
+  const copyAddress = () => {
+    if (!identity) return;
+    navigator.clipboard.writeText(identity.smartAccountAddress);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const handleSend = async () => {
     const trimmed = input.trim();
@@ -74,24 +84,49 @@ export default function DashboardPage() {
 
       {/* ─── HEADER ─── */}
       <header className="dash-header">
-        <span className="dash-logo">PAY<span className="accent">&apos;N</span>GO</span>
-        <div className="header-right">
-          <div className="balance-chip">
-            <span className="balance-label">Balance</span>
-            <span className="balance-value">
-              {balance !== null ? balance + " USDC" : "—"}
+        <div className="header-top">
+          <span className="dash-logo">PAY<span className="accent">&apos;N</span>GO</span>
+          <div className="header-actions">
+            <div className="identity-chip">
+              {identity.handle
+                ? <span className="handle-display">@{identity.handle}</span>
+                : <button className="address-copy-btn" onClick={copyAddress} title="Copiar dirección">
+                    {copied ? "✓ Copiado" : shortAddress}
+                  </button>
+              }
+            </div>
+            <button className="logout-btn" onClick={() => setConfirmLogout(true)} title="Cerrar sesión">⏻</button>
+          </div>
+        </div>
+        <div className="balance-center">
+          <p className="balance-label-big">Balance disponible</p>
+          <div className="balance-amount-row">
+            <span className="balance-big">
+              {balance !== null ? balance : "—"}
             </span>
-            <button className="refresh-btn" onClick={refreshBalance} title="Actualizar balance">↻</button>
+            <span className="balance-currency">USDC</span>
+            <button className="refresh-btn-sm" onClick={refreshBalance} title="Actualizar">↻</button>
           </div>
-          <div className="identity-chip">
-            {identity.handle
-              ? <span className="handle-display">@{identity.handle}</span>
-              : <span className="address-display">{shortAddress}</span>
-            }
-          </div>
-          <button className="logout-btn" onClick={logout} title="Cerrar sesión">⏻</button>
         </div>
       </header>
+
+      {/* ─── CONFIRM LOGOUT ─── */}
+      {confirmLogout && (
+        <div className="modal-overlay" onClick={() => setConfirmLogout(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <p className="modal-title">¿Cerrar sesión?</p>
+            <p className="modal-desc">Asegúrate de tener guardadas tus 12 palabras de recuperación antes de salir.</p>
+            <div className="modal-actions">
+              <button className="modal-btn-danger" onClick={() => { setConfirmLogout(false); logout(); }}>
+                Sí, cerrar sesión
+              </button>
+              <button className="modal-btn-ghost" onClick={() => setConfirmLogout(false)}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ─── CHAT ─── */}
       <div className="chat-container">
@@ -109,7 +144,7 @@ export default function DashboardPage() {
                 {[
                   "Envía 10 USDC a @carlos por el diseño",
                   "Crea un link de 50 USDC para la renta",
-                  "¿Cuánto tengo en mi cuenta?",
+                  "¿A quién le puedo enviar USDC?",
                 ].map((s) => (
                   <button
                     key={s}
@@ -273,42 +308,63 @@ function Styles() {
       /* ─── Header ─── */
       .dash-header {
         position: relative; z-index: 10;
+        display: flex; flex-direction: column;
+        padding: 1rem 1.5rem 1.25rem;
+        border-bottom: 1px solid rgba(0,255,170,0.1);
+        background: rgba(8,11,15,0.97);
+        backdrop-filter: blur(12px);
+        flex-shrink: 0; gap: 0.75rem;
+      }
+
+      .header-top {
         display: flex; align-items: center;
         justify-content: space-between;
-        padding: 1rem 1.5rem;
-        border-bottom: 1px solid rgba(0,255,170,0.1);
-        background: rgba(8,11,15,0.95);
-        backdrop-filter: blur(12px);
-        flex-shrink: 0;
       }
 
       .dash-logo {
-        font-size: 1rem; font-weight: 700; letter-spacing: 0.1em;
+        font-size: 0.9rem; font-weight: 700; letter-spacing: 0.12em;
       }
 
       .accent { color: #00ffaa; }
 
-      .header-right {
-        display: flex; align-items: center; gap: 0.75rem;
+      .header-actions {
+        display: flex; align-items: center; gap: 0.6rem;
       }
 
-      .balance-chip {
-        display: flex; align-items: center; gap: 0.4rem;
-        padding: 0.35rem 0.75rem;
-        border: 1px solid rgba(0,255,170,0.15); border-radius: 2px;
-        background: rgba(0,255,170,0.04);
+      .balance-center {
+        display: flex; flex-direction: column;
+        align-items: center; gap: 0.2rem;
+        padding: 0.5rem 0 0.25rem;
       }
 
-      .balance-label { font-size: 0.65rem; color: #475569; }
-      .balance-value { font-size: 0.78rem; color: #00ffaa; font-weight: 600; }
+      .balance-label-big {
+        font-size: 0.7rem; color: #475569;
+        letter-spacing: 0.1em; margin: 0;
+        text-transform: uppercase;
+      }
 
-      .refresh-btn {
+      .balance-amount-row {
+        display: flex; align-items: baseline; gap: 0.4rem;
+      }
+
+      .balance-big {
+        font-size: 2.75rem; font-weight: 700;
+        color: #f8fafc; letter-spacing: -0.02em;
+        line-height: 1;
+      }
+
+      .balance-currency {
+        font-size: 1rem; color: #00ffaa;
+        font-weight: 600; letter-spacing: 0.05em;
+      }
+
+      .refresh-btn-sm {
         background: none; border: none; color: #334155;
-        font-size: 0.8rem; cursor: pointer; padding: 0;
-        transition: color 0.2s;
+        font-size: 0.85rem; cursor: pointer; padding: 0.25rem;
+        transition: color 0.2s; line-height: 1;
       }
 
-      .refresh-btn:hover { color: #00ffaa; }
+      .refresh-btn-sm:hover { color: #00ffaa; }
 
       .identity-chip {
         padding: 0.35rem 0.75rem;
@@ -480,7 +536,8 @@ function Styles() {
       /* ─── Input area ─── */
       .input-area {
         display: flex; align-items: flex-end; gap: 0.5rem;
-        padding: 0.75rem 0 1rem;
+        padding: 0.75rem 0;
+        padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
         border-top: 1px solid rgba(0,255,170,0.07);
         flex-shrink: 0;
       }
@@ -540,10 +597,76 @@ function Styles() {
 
       @keyframes spin { to { transform: rotate(360deg); } }
 
+      /* ─── Modal logout ─── */
+      .modal-overlay {
+        position: fixed; inset: 0; z-index: 100;
+        background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+        display: flex; align-items: center; justify-content: center;
+        padding: 1.5rem;
+      }
+
+      .modal-card {
+        background: #0d1117;
+        border: 1px solid rgba(0,255,170,0.2);
+        border-radius: 4px; padding: 1.75rem;
+        max-width: 360px; width: 100%;
+        display: flex; flex-direction: column; gap: 1rem;
+      }
+
+      .modal-title {
+        font-size: 1rem; font-weight: 700;
+        color: #f8fafc; margin: 0;
+      }
+
+      .modal-desc {
+        font-size: 0.8rem; color: #64748b;
+        margin: 0; line-height: 1.6;
+      }
+
+      .modal-actions {
+        display: flex; flex-direction: column; gap: 0.6rem;
+      }
+
+      .modal-btn-danger {
+        width: 100%; padding: 0.75rem;
+        background: rgba(239,68,68,0.1);
+        border: 1px solid rgba(239,68,68,0.3);
+        color: #ef4444; font-family: inherit;
+        font-size: 0.85rem; font-weight: 700;
+        border-radius: 2px; cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .modal-btn-danger:hover { background: rgba(239,68,68,0.2); }
+
+      .modal-btn-ghost {
+        width: 100%; padding: 0.75rem;
+        background: none;
+        border: 1px solid rgba(0,255,170,0.15);
+        color: #475569; font-family: inherit;
+        font-size: 0.85rem; border-radius: 2px;
+        cursor: pointer; transition: all 0.2s;
+      }
+
+      .modal-btn-ghost:hover { color: #e2e8f0; }
+
+      /* ─── Address copy button ─── */
+      .address-copy-btn {
+        background: none; border: none;
+        color: #475569; font-family: inherit;
+        font-size: 0.75rem; cursor: pointer;
+        padding: 0; transition: color 0.2s;
+      }
+
+      .address-copy-btn:hover { color: #00ffaa; }
+
       @media (max-width: 640px) {
-        .dash-header { padding: 0.75rem 1rem; }
-        .balance-label { display: none; }
+        .dash-header { padding: 0.85rem 1rem 1rem; }
+        .balance-big { font-size: 2.25rem; }
         .msg { max-width: 95%; }
+        .chat-container { padding: 0 0.75rem; }
+        .suggestions-row { gap: 0.4rem; }
+        .suggestion-chip { font-size: 0.75rem; padding: 0.5rem 0.75rem; }
       }
     `}</style>
   );
