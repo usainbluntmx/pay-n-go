@@ -10,9 +10,11 @@ export default function HomePage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && hasIdentity) {
+    if (loading) return;
+    if (hasIdentity) {
       router.push("/dashboard");
     }
+    // Si !hasIdentity y !loading, el onboarding se muestra automáticamente
   }, [loading, hasIdentity, router]);
 
   if (loading) {

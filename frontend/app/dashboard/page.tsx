@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useIdentity } from "@/hooks/useIdentity";
 import { useAgent, AgentMessage } from "@/hooks/useAgent";
 import { useHandle } from "@/hooks/useHandle";
+import { usePush } from "@/hooks/usePush";
 
 export default function DashboardPage() {
   const { identity, balance, refreshBalance, logout, setHandle, isReady } = useIdentity();
@@ -17,6 +18,10 @@ export default function DashboardPage() {
     cancelSuggestion,
     clearMessages,
   } = useAgent();
+
+  const { status: pushStatus, subscribe: subscribePush } = usePush(
+    identity?.smartAccountAddress
+  );
 
   const [input, setInput] = useState("");
   const [mounted, setMounted] = useState(false);
@@ -90,19 +95,28 @@ export default function DashboardPage() {
         <div className="header-top">
           <span className="dash-logo">PAY<span className="accent">&apos;N</span>GO</span>
           <div className="header-actions">
+            {(pushStatus === "idle" || pushStatus === "granted") && (
+              <button
+                className={"push-btn" + (pushStatus === "granted" ? " granted" : "")}
+                onClick={pushStatus === "idle" ? subscribePush : undefined}
+                title={pushStatus === "granted" ? "Notificaciones activas" : "Activar notificaciones"}
+              >
+                🔔
+              </button>
+            )}
             <button className="contacts-btn" onClick={() => setShowContacts(true)} title="Contactos">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="9" cy="6" r="3" stroke="currentColor" strokeWidth="1.5"/>
-                <path d="M2 15c0-3.314 3.134-6 7-6s7 2.686 7 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                <circle cx="9" cy="6" r="3" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M2 15c0-3.314 3.134-6 7-6s7 2.686 7 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
             </button>
             <div className="identity-chip">
-              {identity.handle
-                ? <span className="handle-display">@{identity.handle}</span>
-                : <button className="address-copy-btn" onClick={copyAddress} title="Copiar dirección">
-                    {copied ? "✓ Copiado" : shortAddress}
-                  </button>
-              }
+              <button className="address-copy-btn" onClick={copyAddress} title="Copiar dirección de wallet">
+                {identity.handle
+                  ? (copied ? "✓ Copiado" : `@${identity.handle}`)
+                  : (copied ? "✓ Copiado" : shortAddress)
+                }
+              </button>
             </div>
             <button className="logout-btn" onClick={() => setConfirmLogout(true)} title="Cerrar sesión">⏻</button>
           </div>
@@ -242,9 +256,9 @@ export default function DashboardPage() {
           {messages.length > 0 && (
             <button className="clear-btn" onClick={clearMessages} title="Volver al inicio">
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="11" cy="11" r="10" stroke="currentColor" strokeWidth="1.5"/>
-                <line x1="7" y1="7" x2="15" y2="15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                <line x1="15" y1="7" x2="7" y2="15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                <circle cx="11" cy="11" r="10" stroke="currentColor" strokeWidth="1.5" />
+                <line x1="7" y1="7" x2="15" y2="15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                <line x1="15" y1="7" x2="7" y2="15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
             </button>
           )}
@@ -254,11 +268,7 @@ export default function DashboardPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={
-              identity.handle
-                ? `Dile algo al agente, @${identity.handle}...`
-                : "Dile algo al agente..."
-            }
+            placeholder="Escribe aquí..."
             rows={1}
             disabled={loading || executingTx}
           />
@@ -340,9 +350,9 @@ function HandleModal({ identity, onComplete, onClose }: {
 
   const handleStatus = !handleInput || handleInput.length < 3 ? null
     : loading ? "checking"
-    : available === true ? "available"
-    : available === false ? "taken"
-    : null;
+      : available === true ? "available"
+        : available === false ? "taken"
+          : null;
 
   const submit = async () => {
     if (!handleInput || handleStatus !== "available") return;
@@ -777,15 +787,16 @@ function Styles() {
       .clear-btn:hover { color: #ef4444; }
 
       .chat-input {
-        flex: 1; background: rgba(0,255,170,0.03);
-        border: 1px solid rgba(0,255,170,0.12); border-radius: 2px;
-        padding: 0.75rem 1rem; font-family: inherit;
-        font-size: 0.85rem; color: #e2e8f0; outline: none;
-        resize: none; line-height: 1.5;
-        transition: border-color 0.2s;
-        min-height: 44px; max-height: 140px;
-        field-sizing: content;
-      }
+  flex: 1; background: rgba(0,255,170,0.03);
+  border: 1px solid rgba(0,255,170,0.12); border-radius: 2px;
+  padding: 0.75rem 1rem; font-family: inherit;
+  font-size: 0.85rem; color: #e2e8f0; outline: none;
+  resize: none; line-height: 1.5;
+  transition: border-color 0.2s;
+  height: 48px; min-height: 48px; max-height: 140px;
+  field-sizing: content;
+  overflow: hidden;
+}
 
       .chat-input:focus { border-color: rgba(0,255,170,0.35); }
       .chat-input::placeholder { color: #334155; }
@@ -919,6 +930,16 @@ function Styles() {
       }
 
       .handle-input-wrap:focus-within { border-color: rgba(0,255,170,0.5); }
+      /* ─── Push notification button ─── */
+      .push-btn {
+        background: none; border: none; font-size: 1rem;
+        cursor: pointer; padding: 0.35rem; opacity: 0.4;
+        transition: opacity 0.2s; line-height: 1;
+      }
+
+      .push-btn:hover { opacity: 0.8; }
+      .push-btn.granted { opacity: 1; cursor: default; }
+
       .contacts-btn {
         background: none; border: none; color: #475569;
         cursor: pointer; padding: 0.35rem; transition: color 0.2s;

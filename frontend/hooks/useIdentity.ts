@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { generateMnemonic, mnemonicToSeedSync, validateMnemonic } from "bip39";
 import { HDKey } from "@scure/bip32";
 import {
@@ -24,6 +24,7 @@ import { createSmartAccountClient } from "permissionless";
 
 const STORAGE_KEY = "payngo_identity";
 const USDC = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as Address;
+const BALANCE_POLL_INTERVAL = 15_000; // 15 segundos
 
 const USDC_ABI = [
   {
@@ -52,11 +53,11 @@ export interface IdentityState {
   loading: boolean;
   error: string | null;
   step:
-    | "idle"
-    | "generating"
-    | "creating_account"
-    | "ready"
-    | "recovering";
+  | "idle"
+  | "generating"
+  | "creating_account"
+  | "ready"
+  | "recovering";
 }
 
 // ─── Helpers ──────────────────────────────────────────────────
@@ -100,6 +101,10 @@ export function useIdentity() {
     error: null,
     step: "idle",
   });
+
+  // Ref para detectar cambios de balance y disparar notificaciones
+  const prevBalanceRef = useRef<string | null>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const rpcUrl = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || "";
   const pimlicoApiKey = process.env.NEXT_PUBLIC_PIMLICO_API_KEY || "";
@@ -150,6 +155,54 @@ export function useIdentity() {
     }
   }, [rpcUrl]);
 
+  // ─── Disparar notificación push via API ──────────────────────
+
+  const sendPushNotification = useCallback(async (
+    title: string,
+    body: string
+  ) => {
+    try {
+      await fetch("/api/push/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, body }),
+      });
+    } catch {
+      // Silencioso — notificaciones no son críticas
+    }
+  }, []);
+
+  // ─── Polling automático del balance ──────────────────────────
+
+  const startPolling = useCallback((address: Address, initialBalance: string) => {
+    prevBalanceRef.current = initialBalance;
+
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+    }
+
+    pollIntervalRef.current = setInterval(async () => {
+      const newBalance = await loadBalance(address);
+      const prev = prevBalanceRef.current;
+
+      setState(s => {
+        if (s.identity?.smartAccountAddress !== address) return s;
+        return { ...s, balance: newBalance };
+      });
+
+      // Detectar si aumentó el balance (recibimos USDC)
+      if (prev !== null && parseFloat(newBalance) > parseFloat(prev)) {
+        const received = (parseFloat(newBalance) - parseFloat(prev)).toFixed(4);
+        sendPushNotification(
+          "💸 Pago recibido",
+          `Recibiste ${received} USDC en tu cuenta Pay'n Go`
+        );
+      }
+
+      prevBalanceRef.current = newBalance;
+    }, BALANCE_POLL_INTERVAL);
+  }, [loadBalance, sendPushNotification]);
+
   // ─── Cargar identidad al montar ──────────────────────────────
 
   useEffect(() => {
@@ -159,7 +212,6 @@ export function useIdentity() {
       return;
     }
 
-    // Identidad existente — cargar balance
     loadBalance(stored.smartAccountAddress).then(balance => {
       setState({
         identity: stored,
@@ -168,68 +220,50 @@ export function useIdentity() {
         error: null,
         step: "ready",
       });
+      startPolling(stored.smartAccountAddress, balance);
     });
-  }, [loadBalance]);
+
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+  }, [loadBalance, startPolling]);
 
   // ─── Crear nueva identidad ───────────────────────────────────
 
   const createIdentity = useCallback(async (): Promise<Identity> => {
-    setState(prev => ({
-      ...prev,
-      loading: true,
-      error: null,
-      step: "generating",
-    }));
+    setState(prev => ({ ...prev, loading: true, error: null, step: "generating" }));
 
     try {
-      // 1. Generar mnemónico de 12 palabras
-      const mnemonic = generateMnemonic(128); // 128 bits = 12 palabras
-
-      // 2. Derivar keypair
+      const mnemonic = generateMnemonic(128);
       const privateKey = derivePrivateKey(mnemonic);
       const owner = privateKeyToAccount(privateKey);
 
       setState(prev => ({ ...prev, step: "creating_account" }));
 
-      // 3. Crear Safe Smart Account
       const smartAccountAddress = await createSafeAccount(owner);
 
-      // 4. Construir identidad
       const identity: Identity = {
-        mnemonic,
-        privateKey,
+        mnemonic, privateKey,
         ownerAddress: owner.address,
         smartAccountAddress,
         handle: null,
         createdAt: Date.now(),
       };
 
-      // 5. Persistir
       saveIdentity(identity);
 
-      // 6. Cargar balance inicial
       const balance = await loadBalance(smartAccountAddress);
 
-      setState({
-        identity,
-        balance,
-        loading: false,
-        error: null,
-        step: "ready",
-      });
+      setState({ identity, balance, loading: false, error: null, step: "ready" });
+      startPolling(smartAccountAddress, balance);
 
       return identity;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setState(prev => ({
-        ...prev,
-        loading: false,
-        error: msg,
-        step: "idle",
-      }));
+      setState(prev => ({ ...prev, loading: false, error: msg, step: "idle" }));
       throw e;
     }
-  }, [createSafeAccount, loadBalance]);
+  }, [createSafeAccount, loadBalance, startPolling]);
 
   // ─── Recuperar identidad con mnemónico ──────────────────────
 
@@ -238,12 +272,7 @@ export function useIdentity() {
       throw new Error("Mnemónico inválido. Verifica las 12 palabras.");
     }
 
-    setState(prev => ({
-      ...prev,
-      loading: true,
-      error: null,
-      step: "recovering",
-    }));
+    setState(prev => ({ ...prev, loading: true, error: null, step: "recovering" }));
 
     try {
       const privateKey = derivePrivateKey(mnemonic);
@@ -254,8 +283,7 @@ export function useIdentity() {
       const smartAccountAddress = await createSafeAccount(owner);
 
       const identity: Identity = {
-        mnemonic,
-        privateKey,
+        mnemonic, privateKey,
         ownerAddress: owner.address,
         smartAccountAddress,
         handle: null,
@@ -266,26 +294,16 @@ export function useIdentity() {
 
       const balance = await loadBalance(smartAccountAddress);
 
-      setState({
-        identity,
-        balance,
-        loading: false,
-        error: null,
-        step: "ready",
-      });
+      setState({ identity, balance, loading: false, error: null, step: "ready" });
+      startPolling(smartAccountAddress, balance);
 
       return identity;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setState(prev => ({
-        ...prev,
-        loading: false,
-        error: msg,
-        step: "idle",
-      }));
+      setState(prev => ({ ...prev, loading: false, error: msg, step: "idle" }));
       throw e;
     }
-  }, [createSafeAccount, loadBalance]);
+  }, [createSafeAccount, loadBalance, startPolling]);
 
   // ─── Actualizar handle ───────────────────────────────────────
 
@@ -298,29 +316,26 @@ export function useIdentity() {
     });
   }, []);
 
-  // ─── Refrescar balance ───────────────────────────────────────
+  // ─── Refrescar balance manualmente ───────────────────────────
 
   const refreshBalance = useCallback(async () => {
     const { identity } = state;
     if (!identity) return;
     const balance = await loadBalance(identity.smartAccountAddress);
     setState(prev => ({ ...prev, balance }));
+    prevBalanceRef.current = balance;
   }, [state, loadBalance]);
 
   // ─── Cerrar sesión ───────────────────────────────────────────
 
   const logout = useCallback(() => {
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     clearIdentity();
-    setState({
-      identity: null,
-      balance: null,
-      loading: false,
-      error: null,
-      step: "idle",
-    });
+    setState({ identity: null, balance: null, loading: false, error: null, step: "idle" });
+    window.location.href = "/";
   }, []);
 
-  // ─── Obtener Smart Account Client (para firmar txs) ──────────
+  // ─── Obtener Smart Account Client ────────────────────────────
 
   const getSmartAccountClient = useCallback(async () => {
     const { identity } = state;
@@ -335,19 +350,13 @@ export function useIdentity() {
 
     const pimlicoClient = createPimlicoClient({
       transport: http(bundlerUrl),
-      entryPoint: {
-        address: entryPoint07Address,
-        version: "0.7",
-      },
+      entryPoint: { address: entryPoint07Address, version: "0.7" },
     });
 
     const safeAccount = await toSafeSmartAccount({
       client: publicClient as never,
       owners: [owner as never],
-      entryPoint: {
-        address: entryPoint07Address,
-        version: "0.7",
-      },
+      entryPoint: { address: entryPoint07Address, version: "0.7" },
       version: "1.4.1",
     });
 
