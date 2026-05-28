@@ -159,13 +159,14 @@ export function useIdentity() {
 
   const sendPushNotification = useCallback(async (
     title: string,
-    body: string
+    body: string,
+    address?: string
   ) => {
     try {
       await fetch("/api/push/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, body }),
+        body: JSON.stringify({ title, body, address }),
       });
     } catch {
       // Silencioso — notificaciones no son críticas
@@ -203,7 +204,8 @@ export function useIdentity() {
           localStorage.setItem(lastNotifKey, now.toString());
           sendPushNotification(
             "💸 Pago recibido",
-            `Recibiste ${received} USDC en tu cuenta Pay'n Go`
+            `Recibiste ${received} USDC en tu cuenta Pay'n Go`,
+            address  // ← solo notificar a este usuario
           );
         }
       }
@@ -392,6 +394,7 @@ export function useIdentity() {
     refreshBalance,
     logout,
     getSmartAccountClient,
+    sendPushNotification,
     isReady: state.step === "ready",
     hasIdentity: !!state.identity,
   };

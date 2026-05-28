@@ -65,7 +65,7 @@ function calculateFee(amount: string): { amountWithFee: string; fee: string } {
 // ─── Hook principal ───────────────────────────────────────────
 
 export function useAgent() {
-  const { identity, balance, getSmartAccountClient, refreshBalance } = useIdentity();
+  const { identity, balance, getSmartAccountClient, refreshBalance, sendPushNotification } = useIdentity();
   const { resolveHandle } = useHandle();
 
   const [state, setState] = useState<AgentState>({
@@ -327,6 +327,23 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
         // Actualizar balance
         await refreshBalance();
 
+        // Notificar al emisor que el pago fue enviado
+        sendPushNotification(
+          "✅ Pago enviado",
+          `Enviaste ${suggestion.params.amount} USDC a ${suggestion.params.recipient}`,
+          identity.smartAccountAddress
+        );
+
+        // Notificar al receptor que recibió un pago
+        // Buscar la suscripción del receptor por su address
+        if (suggestion.params.recipientAddress) {
+          sendPushNotification(
+            "💸 Pago recibido",
+            `Recibiste ${suggestion.params.amount} USDC${identity.handle ? ` de @${identity.handle}` : ""}`,
+            suggestion.params.recipientAddress
+          );
+        }
+
         addMessage({
           role: "agent",
           content: `✅ Pago enviado exitosamente. **${suggestion.params.amount} USDC** llegaron a **${suggestion.params.recipient}**. Gas pagado por Pimlico — sin costo para ti.`,
@@ -351,7 +368,7 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
     } finally {
       setState(prev => ({ ...prev, executingTx: false }));
     }
-  }, [identity, getSmartAccountClient, refreshBalance, addMessage]);
+  }, [identity, getSmartAccountClient, refreshBalance, sendPushNotification, addMessage]);
 
   // ─── Cancelar sugerencia pendiente ───────────────────────────
 
