@@ -115,10 +115,7 @@ export default function DashboardPage() {
             </span>
             <span className="balance-currency">USDC</span>
             <button className="refresh-btn-sm" onClick={refreshBalance} title="Actualizar balance">
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M15.5 9A6.5 6.5 0 1 1 9 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                <path d="M9 2.5L12 5.5M9 2.5L12 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
+              ↻
             </button>
           </div>
         </div>
@@ -535,6 +532,7 @@ function Styles() {
         position: relative; z-index: 10;
         display: flex; flex-direction: column;
         padding: 1rem 1.5rem 1.25rem;
+        padding-top: max(1.25rem, env(safe-area-inset-top));
         border-bottom: 1px solid rgba(0,255,170,0.1);
         background: rgba(8,11,15,0.97);
         backdrop-filter: blur(12px);
@@ -929,14 +927,14 @@ function Styles() {
 
       .contacts-btn:hover { color: #00ffaa; }
 
-      /* ─── Refresh button sm ─── */
       .refresh-btn-sm {
-        background: none; border: none; color: #475569;
-        cursor: pointer; padding: 0.3rem;
-        transition: color 0.2s; display: flex; align-items: center;
+        background: none; border: none; color: #00ffaa;
+        cursor: pointer; padding: 0.3rem 0.5rem;
+        transition: all 0.2s; display: flex; align-items: center;
+        font-size: 1.3rem; line-height: 1;
       }
 
-      .refresh-btn-sm:hover { color: #00ffaa; }
+      .refresh-btn-sm:hover { opacity: 0.7; transform: rotate(180deg); transition: transform 0.4s; }
 
       /* ─── Contacts drawer ─── */
       .drawer-overlay {
@@ -1061,7 +1059,7 @@ function Styles() {
       .contact-remove:hover { color: #ef4444; }
 
       @media (max-width: 640px) {
-        .dash-header { padding: 0.85rem 1rem 1rem; }
+        .dash-header { padding: 0.85rem 1rem 1rem; padding-top: max(0.85rem, env(safe-area-inset-top)); }
         .balance-big { font-size: 2.25rem; }
         .msg { max-width: 95%; }
         .chat-container { padding: 0 0.75rem; }
