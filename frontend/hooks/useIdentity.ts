@@ -193,10 +193,19 @@ export function useIdentity() {
       // Detectar si aumentó el balance (recibimos USDC)
       if (prev !== null && parseFloat(newBalance) > parseFloat(prev)) {
         const received = (parseFloat(newBalance) - parseFloat(prev)).toFixed(4);
-        sendPushNotification(
-          "💸 Pago recibido",
-          `Recibiste ${received} USDC en tu cuenta Pay'n Go`
-        );
+
+        // Evitar notificaciones duplicadas entre pestañas con localStorage
+        const lastNotifKey = "payngo_last_notif";
+        const lastNotif = localStorage.getItem(lastNotifKey);
+        const now = Date.now();
+
+        if (!lastNotif || now - parseInt(lastNotif) > 30_000) {
+          localStorage.setItem(lastNotifKey, now.toString());
+          sendPushNotification(
+            "💸 Pago recibido",
+            `Recibiste ${received} USDC en tu cuenta Pay'n Go`
+          );
+        }
       }
 
       prevBalanceRef.current = newBalance;
