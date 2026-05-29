@@ -1,0 +1,16 @@
+name: Balance Check
+
+on:
+  schedule:
+    - cron: '* * * * *'  # cada minuto
+  workflow_dispatch:       # permite ejecutarlo manualmente desde GitHub
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check balances and send push notifications
+        run: |
+          curl -s -X GET \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://pay-n-go-weld.vercel.app/api/cron/balance-check
