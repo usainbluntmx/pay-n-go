@@ -299,8 +299,8 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
           { type: "function", name: "executePayment", stateMutability: "nonpayable", inputs: [{ name: "order", type: "tuple", components: [{ name: "sender", type: "address" }, { name: "recipient", type: "address" }, { name: "tokenIn", type: "address" }, { name: "tokenOut", type: "address" }, { name: "amountIn", type: "uint256" }, { name: "minAmountOut", type: "uint256" }, { name: "routeId", type: "uint256" }, { name: "deadline", type: "uint256" }, { name: "orderId", type: "bytes32" }] }], outputs: [{ name: "orderId", type: "bytes32" }] },
         ] as const;
 
-        const amountBigInt = parseUnits(amountWithFee, 6);
-        const minAmountOut = (amountBigInt * 99n) / 100n;
+        const amountBigInt = parseUnits(amountWithFee, 6);  // lo que sale de la cuenta del usuario
+        const minAmountOut = parseUnits(suggestion.params.amount!, 6);  // lo que debe recibir el receptor
 
         // Obtener block para deadline
         const { createPublicClient, http } = await import("viem");
