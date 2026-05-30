@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { parseUnits, formatUnits, type Address, type Hash } from "viem";
+import { parseUnits, formatUnits, maxUint256, type Address, type Hash } from "viem";
 import { useIdentity } from "./useIdentity";
 import { useHandle } from "./useHandle";
 
@@ -64,7 +64,13 @@ function calculateFee(amount: string): { amountWithFee: string; fee: string } {
 
 // ─── Hook principal ───────────────────────────────────────────
 
-export function useAgent() {
+export function useAgent(saveTx?: (tx: {
+  type: "sent" | "received";
+  counterpartAddress: string;
+  counterpartHandle: string | null;
+  amount: string;
+  memo: string | null;
+}) => Promise<unknown>) {
   const { identity, balance, getSmartAccountClient, refreshBalance, sendPushNotification } = useIdentity();
   const { resolveHandle } = useHandle();
 
@@ -289,30 +295,34 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
         if (!recipientAddress || !amountWithFee) throw new Error("Faltan datos del pago");
 
         const USDC = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as Address;
-        const FEE_RECIPIENT = "0x9dabBF114698bd9bFBF6222b9FD6Cd967ECD3850" as Address;
+        const ROUTER = "0x52e5d621290F9941254d42F8AB905E3fAB32f6F1" as Address;
 
         const ERC20_ABI = [
-          { type: "function", name: "transfer", stateMutability: "nonpayable", inputs: [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ name: "", type: "bool" }] },
+          { type: "function", name: "approve", stateMutability: "nonpayable", inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ name: "", type: "bool" }] },
         ] as const;
 
-        // Calcular montos exactos
-        const amountToRecipient = parseUnits(suggestion.params.amount!, 6);
-        const totalAmount = parseUnits(amountWithFee, 6);
-        const feeAmount = totalAmount - amountToRecipient;
+        const ROUTER_ABI = [
+          { type: "function", name: "executePayment", stateMutability: "nonpayable", inputs: [{ name: "order", type: "tuple", components: [{ name: "sender", type: "address" }, { name: "recipient", type: "address" }, { name: "tokenIn", type: "address" }, { name: "tokenOut", type: "address" }, { name: "amountIn", type: "uint256" }, { name: "minAmountOut", type: "uint256" }, { name: "routeId", type: "uint256" }, { name: "deadline", type: "uint256" }, { name: "orderId", type: "bytes32" }] }], outputs: [{ name: "orderId", type: "bytes32" }] },
+        ] as const;
 
-        // Batch: transfer al receptor + transfer fee al protocolo
-        const calls = feeAmount > 0n
-          ? [
-              { to: USDC, abi: ERC20_ABI, functionName: "transfer", args: [recipientAddress as Address, amountToRecipient] },
-              { to: USDC, abi: ERC20_ABI, functionName: "transfer", args: [FEE_RECIPIENT, feeAmount] },
-            ]
-          : [
-              { to: USDC, abi: ERC20_ABI, functionName: "transfer", args: [recipientAddress as Address, amountToRecipient] },
-            ];
+        const amountBigInt = parseUnits(amountWithFee, 6);  // lo que sale de la cuenta del usuario
+        const minAmountOut = parseUnits(suggestion.params.amount!, 6);  // lo que debe recibir el receptor
+
+        // Obtener block para deadline
+        const { createPublicClient, http } = await import("viem");
+        const { sepolia } = await import("viem/chains");
+        const publicClient = createPublicClient({ chain: sepolia, transport: http(process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || "") });
+        const block = await publicClient.getBlock();
+        const deadline = block.timestamp + 3600n;
 
         const userOpHash = await (smartAccountClient as never as {
           sendUserOperation: (params: { calls: unknown[] }) => Promise<Hash>;
-        }).sendUserOperation({ calls });
+        }).sendUserOperation({
+          calls: [
+            { to: USDC, abi: ERC20_ABI, functionName: "approve", args: [ROUTER, maxUint256] },
+            { to: ROUTER, abi: ROUTER_ABI, functionName: "executePayment", args: [{ sender: safeAccount.address, recipient: recipientAddress as Address, tokenIn: USDC, tokenOut: USDC, amountIn: amountBigInt, minAmountOut, routeId: 0n, deadline, orderId: "0x0000000000000000000000000000000000000000000000000000000000000000" as Hash }] },
+          ],
+        });
 
         const receipt = await (smartAccountClient as never as {
           waitForUserOperationReceipt: (params: { hash: Hash }) => Promise<{ receipt: { transactionHash: Hash } }>;
@@ -323,6 +333,19 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
         // Actualizar balance
         await refreshBalance();
 
+        // Guardar tx para el emisor
+        if (saveTx) {
+          await saveTx({
+            type: "sent",
+            counterpartAddress: suggestion.params.recipientAddress!,
+            counterpartHandle: suggestion.params.recipient?.startsWith("@")
+              ? suggestion.params.recipient.slice(1)
+              : null,
+            amount: suggestion.params.amount!,
+            memo: suggestion.params.memo || null,
+          });
+        }
+
         // Notificar al emisor que el pago fue enviado
         sendPushNotification(
           "✅ Pago enviado",
@@ -332,12 +355,33 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
 
         // Notificar al receptor que recibió un pago
         // Buscar la suscripción del receptor por su address
+        // Notificar y registrar tx para el receptor
         if (suggestion.params.recipientAddress) {
           sendPushNotification(
             "💸 Pago recibido",
             `Recibiste ${suggestion.params.amount} USDC${identity.handle ? ` de @${identity.handle}` : ""}`,
             suggestion.params.recipientAddress
           );
+
+          // Guardar tx en historial del receptor
+          try {
+            await fetch("/api/transactions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                address: suggestion.params.recipientAddress,
+                tx: {
+                  id: crypto.randomUUID(),
+                  type: "received",
+                  counterpartAddress: identity.smartAccountAddress,
+                  counterpartHandle: identity.handle || null,
+                  amount: suggestion.params.amount!,
+                  memo: suggestion.params.memo || null,
+                  timestamp: Date.now(),
+                },
+              }),
+            });
+          } catch { /* silencioso */ }
         }
 
         addMessage({

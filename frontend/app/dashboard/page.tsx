@@ -5,9 +5,11 @@ import { useIdentity } from "@/hooks/useIdentity";
 import { useAgent, AgentMessage } from "@/hooks/useAgent";
 import { useHandle } from "@/hooks/useHandle";
 import { usePush } from "@/hooks/usePush";
+import { useTransactions, Transaction } from "@/hooks/useTransactions";
 
 export default function DashboardPage() {
   const { identity, balance, refreshBalance, logout, setHandle, isReady } = useIdentity();
+  const { txs, loadTxs, saveTx } = useTransactions(identity?.smartAccountAddress);
   const {
     messages,
     loading,
@@ -17,7 +19,7 @@ export default function DashboardPage() {
     executeSuggestion,
     cancelSuggestion,
     clearMessages,
-  } = useAgent();
+  } = useAgent(saveTx);
 
   const { status: pushStatus, subscribe: subscribePush } = usePush(
     identity?.smartAccountAddress
@@ -28,10 +30,15 @@ export default function DashboardPage() {
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [showContacts, setShowContacts] = useState(false);
   const [showHandleModal, setShowHandleModal] = useState(false);
+  const [showTxs, setShowTxs] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    if (isReady && identity) loadTxs();
+  }, [isReady, identity?.smartAccountAddress]);
 
   // Auto-scroll al último mensaje
   useEffect(() => {
@@ -47,12 +54,58 @@ export default function DashboardPage() {
   }, [mounted, isReady, messages.length, identity]);
 
   const [copied, setCopied] = useState(false);
+  const [listening, setListening] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
 
   const copyAddress = () => {
     if (!identity) return;
     navigator.clipboard.writeText(identity.smartAccountAddress);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const startVoice = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    const SpeechRecognition = w.SpeechRecognition || w.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert("Tu navegador no soporta entrada de voz. Usa Safari o Chrome.");
+      return;
+    }
+
+    if (listening) {
+      recognitionRef.current?.stop();
+      setListening(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "es-MX";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => setListening(true);
+
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results as SpeechRecognitionResultList)
+        .map((r: SpeechRecognitionResult) => r[0].transcript)
+        .join("");
+      setInput(transcript);
+    };
+
+    recognition.onend = () => {
+      setListening(false);
+      inputRef.current?.focus();
+    };
+
+    recognition.onerror = () => {
+      setListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
   };
 
   const handleSend = async () => {
@@ -104,6 +157,14 @@ export default function DashboardPage() {
                 🔔
               </button>
             )}
+            <button className="contacts-btn" onClick={() => { setShowTxs(true); loadTxs(); }} title="Transacciones">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <rect x="2" y="2" width="14" height="14" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+                <line x1="5" y1="6" x2="13" y2="6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                <line x1="5" y1="9" x2="13" y2="9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                <line x1="5" y1="12" x2="10" y2="12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </button>
             <button className="contacts-btn" onClick={() => setShowContacts(true)} title="Contactos">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <circle cx="9" cy="6" r="3" stroke="currentColor" strokeWidth="1.5" />
@@ -121,28 +182,16 @@ export default function DashboardPage() {
             <button className="logout-btn" onClick={() => setConfirmLogout(true)} title="Cerrar sesión">⏻</button>
           </div>
         </div>
-        <div className="assets-section">
-          <div className="assets-header">
-            <span className="assets-label">Mis activos</span>
-            <button className="refresh-btn-sm" onClick={refreshBalance} title="Actualizar">↻</button>
-          </div>
-          <div className="asset-row">
-            <div className="asset-icon usdc-icon">
-              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="16" cy="16" r="16" fill="#2775CA"/>
-                <path d="M20.022 18.124c0-2.124-1.28-2.852-3.84-3.156-1.828-.228-2.192-.684-2.192-1.48 0-.796.556-1.302 1.668-1.302 1 0 1.556.34 1.836 1.184a.49.49 0 00.464.308h1.044a.44.44 0 00.44-.452v-.032a3.14 3.14 0 00-2.84-2.584V9.584a.5.5 0 00-.5-.5h-.988a.5.5 0 00-.5.5v1.02c-1.608.228-2.62 1.28-2.62 2.696 0 2.04 1.252 2.8 3.812 3.1 1.7.204 2.22.588 2.22 1.536 0 .948-.832 1.584-1.972 1.584-1.548 0-2.08-.652-2.248-1.544a.468.468 0 00-.46-.388h-1.108a.44.44 0 00-.44.452v.032c.268 1.648 1.364 2.8 3.016 3.1v1.04a.5.5 0 00.5.5h.988a.5.5 0 00.5-.5v-1.02c1.616-.26 2.66-1.376 2.66-2.868z" fill="white"/>
-              </svg>
-            </div>
-            <div className="asset-info">
-              <span className="asset-name">USDC</span>
-              <span className="asset-fullname">USD Coin</span>
-            </div>
-            <div className="asset-balance">
-              <span className="asset-amount">
-                {balance !== null ? parseFloat(balance).toFixed(2) : "—"}
-              </span>
-              <span className="asset-symbol">USDC</span>
-            </div>
+        <div className="balance-center">
+          <p className="balance-label-big">Balance disponible</p>
+          <div className="balance-amount-row">
+            <span className="balance-big">
+              {balance !== null ? balance : "—"}
+            </span>
+            <span className="balance-currency">USDC</span>
+            <button className="refresh-btn-sm" onClick={refreshBalance} title="Actualizar balance">
+              ↻
+            </button>
           </div>
         </div>
       </header>
@@ -168,6 +217,11 @@ export default function DashboardPage() {
       {/* ─── CONTACTS DRAWER ─── */}
       {showContacts && (
         <ContactsDrawer onClose={() => setShowContacts(false)} />
+      )}
+
+      {/* ─── TRANSACTIONS DRAWER ─── */}
+      {showTxs && (
+        <TxsDrawer txs={txs} onClose={() => setShowTxs(false)} />
       )}
 
       {/* ─── HANDLE MODAL ─── */}
@@ -284,6 +338,24 @@ export default function DashboardPage() {
             rows={1}
             disabled={loading || executingTx}
           />
+          <button
+            className={"mic-btn" + (listening ? " listening" : "")}
+            onClick={startVoice}
+            title={listening ? "Detener" : "Hablar"}
+            disabled={loading || executingTx}
+          >
+            {listening ? (
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <rect x="4" y="4" width="10" height="10" rx="2" fill="currentColor"/>
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <rect x="6.5" y="1" width="5" height="9" rx="2.5" stroke="currentColor" strokeWidth="1.5"/>
+                <path d="M3 9c0 3.314 2.686 6 6 6s6-2.686 6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                <line x1="9" y1="15" x2="9" y2="17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            )}
+          </button>
           <button
             className="send-btn"
             onClick={handleSend}
@@ -412,6 +484,60 @@ function HandleModal({ identity, onComplete, onClose }: {
   );
 }
 
+// ─── Transactions Drawer ──────────────────────────────────────
+
+function TxsDrawer({ txs, onClose }: { txs: Transaction[]; onClose: () => void }) {
+  const formatDate = (ts: number) => {
+    const d = new Date(ts);
+    return d.toLocaleDateString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  };
+
+  return (
+    <div className="drawer-overlay" onClick={onClose}>
+      <div className="drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="drawer-header">
+          <h2 className="drawer-title">Historial</h2>
+          <button className="drawer-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="drawer-list">
+          {txs.length === 0 ? (
+            <p className="drawer-empty">Aún no tienes transacciones.</p>
+          ) : (
+            txs.map((tx) => (
+              <div key={tx.id} className={"tx-item " + tx.type}>
+                <div className="tx-icon">
+                  {tx.type === "sent" ? "↑" : "↓"}
+                </div>
+                <div className="tx-info">
+                  <div className="tx-top">
+                    <span className="tx-who">
+                      {tx.type === "sent" ? "Para " : "De "}
+                      <strong>
+                        {tx.counterpartHandle
+                          ? `@${tx.counterpartHandle}`
+                          : tx.counterpartAddress.slice(0, 6) + "..." + tx.counterpartAddress.slice(-4)
+                        }
+                      </strong>
+                    </span>
+                    <span className={"tx-amount " + tx.type}>
+                      {tx.type === "sent" ? "-" : "+"}{tx.amount} USDC
+                    </span>
+                  </div>
+                  {tx.memo && (
+                    <p className="tx-memo">"{tx.memo}"</p>
+                  )}
+                  <p className="tx-date">{formatDate(tx.timestamp)}</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Contacts Drawer ─────────────────────────────────────────
 
 interface Contact {
@@ -526,27 +652,40 @@ function ContactsDrawer({ onClose }: { onClose: () => void }) {
 function Styles() {
   return (
     <style jsx global>{`
+      @import url('https://fonts.googleapis.com/css2?family=Comic+Neue:ital,wght@0,300;0,400;0,700;1,400&display=swap');
+
       *, *::before, *::after { box-sizing: border-box; }
 
       body {
-        background: #080b0f;
-        color: #e2e8f0;
-        font-family: 'IBM Plex Mono', 'Fira Code', monospace;
+        background: #f5f0e8;
+        color: #1a1a1a;
+        font-family: 'Comic Neue', 'Comic Sans MS', cursive;
         margin: 0; overflow: hidden;
       }
 
+      /* ─── Sketch paper background ─── */
       .dash {
         height: 100dvh;
         display: flex; flex-direction: column;
         position: relative;
+        background: #f5f0e8;
       }
 
       .grid-bg {
         position: fixed; inset: 0; z-index: 0;
         background-image:
-          linear-gradient(rgba(0,255,170,0.025) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(0,255,170,0.025) 1px, transparent 1px);
-        background-size: 40px 40px; pointer-events: none;
+          linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px);
+        background-size: 28px 28px;
+        pointer-events: none;
+      }
+
+      /* ─── Sketch border mixin (imperfect) ─── */
+      .sketch-border {
+        border: 2px solid #1a1a1a;
+        border-radius: 2px 6px 3px 5px / 5px 3px 6px 2px;
+        box-shadow: 2px 3px 0 #1a1a1a;
+        position: relative;
       }
 
       /* ─── Header ─── */
@@ -555,10 +694,15 @@ function Styles() {
         display: flex; flex-direction: column;
         padding: 1rem 1.5rem 1.25rem;
         padding-top: max(1.25rem, env(safe-area-inset-top));
-        border-bottom: 1px solid rgba(0,255,170,0.1);
-        background: rgba(8,11,15,0.97);
-        backdrop-filter: blur(12px);
+        border-bottom: 2px solid #1a1a1a;
+        background: #f5f0e8;
         flex-shrink: 0; gap: 0.75rem;
+        animation: slide-down 0.4s ease;
+      }
+
+      @keyframes slide-down {
+        from { opacity: 0; transform: translateY(-12px); }
+        to { opacity: 1; transform: translateY(0); }
       }
 
       .header-top {
@@ -566,11 +710,21 @@ function Styles() {
         justify-content: space-between;
       }
 
+      .accent { color: #1a1a1a; text-decoration: underline; text-underline-offset: 3px; }
+
       .dash-logo {
-        font-size: 0.9rem; font-weight: 700; letter-spacing: 0.12em;
+        font-size: 1.1rem; font-weight: 700; letter-spacing: 0.08em;
+        font-family: 'Comic Neue', cursive;
+        position: relative;
       }
 
-      .accent { color: #00ffaa; }
+      .dash-logo::after {
+        content: '';
+        position: absolute; bottom: -2px; left: 0; right: 0;
+        height: 2px;
+        background: #1a1a1a;
+        transform: skewX(-3deg);
+      }
 
       .header-actions {
         display: flex; align-items: center; gap: 0.6rem;
@@ -580,6 +734,7 @@ function Styles() {
       .assets-section {
         display: flex; flex-direction: column; gap: 0.5rem;
         padding: 0.75rem 0 0.25rem;
+        animation: fade-in 0.5s ease 0.1s both;
       }
 
       .assets-header {
@@ -588,25 +743,37 @@ function Styles() {
       }
 
       .assets-label {
-        font-size: 0.68rem; color: #475569;
-        letter-spacing: 0.1em; text-transform: uppercase;
+        font-size: 0.7rem; color: #555;
+        letter-spacing: 0.12em; text-transform: uppercase;
+        font-family: 'Comic Neue', cursive;
       }
 
       .asset-row {
         display: flex; align-items: center; gap: 0.85rem;
-        padding: 0.75rem 0.85rem;
-        border: 1px solid rgba(0,255,170,0.08);
-        border-radius: 3px;
-        background: rgba(0,255,170,0.02);
-        transition: background 0.2s;
+        padding: 0.7rem 0.85rem;
+        border: 2px solid #1a1a1a;
+        border-radius: 3px 8px 4px 6px / 6px 4px 8px 3px;
+        background: #fff;
+        box-shadow: 3px 3px 0 #1a1a1a;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        animation: draw-in 0.4s ease both;
       }
 
-      .asset-row:hover { background: rgba(0,255,170,0.04); }
+      @keyframes draw-in {
+        from { opacity: 0; transform: translateX(-8px); }
+        to { opacity: 1; transform: translateX(0); }
+      }
+
+      .asset-row:hover {
+        transform: translate(-1px, -1px);
+        box-shadow: 4px 4px 0 #1a1a1a;
+      }
 
       .asset-icon {
         width: 36px; height: 36px; border-radius: 50%;
         display: flex; align-items: center; justify-content: center;
         flex-shrink: 0; overflow: hidden;
+        border: 2px solid #1a1a1a;
       }
 
       .usdc-icon { background: #2775CA; }
@@ -616,11 +783,11 @@ function Styles() {
       }
 
       .asset-name {
-        font-size: 0.88rem; font-weight: 700; color: #f8fafc;
-        letter-spacing: 0.02em;
+        font-size: 0.9rem; font-weight: 700; color: #1a1a1a;
+        font-family: 'Comic Neue', cursive;
       }
 
-      .asset-fullname { font-size: 0.68rem; color: #475569; }
+      .asset-fullname { font-size: 0.68rem; color: #666; }
 
       .asset-balance {
         display: flex; flex-direction: column;
@@ -628,36 +795,93 @@ function Styles() {
       }
 
       .asset-amount {
-        font-size: 0.95rem; font-weight: 700; color: #f8fafc;
-        letter-spacing: -0.01em;
+        font-size: 1rem; font-weight: 700; color: #1a1a1a;
       }
 
-      .asset-symbol { font-size: 0.65rem; color: #475569; letter-spacing: 0.05em; }
+      .asset-symbol { font-size: 0.65rem; color: #666; }
 
       .refresh-btn-sm {
-        background: none; border: none; color: #475569;
-        font-size: 1rem; cursor: pointer; padding: 0.25rem;
-        transition: color 0.2s; line-height: 1;
+        background: none; border: none; color: #555;
+        font-size: 1.1rem; cursor: pointer; padding: 0.25rem;
+        transition: transform 0.3s ease; display: flex; align-items: center;
+        font-family: 'Comic Neue', cursive;
       }
 
-      .refresh-btn-sm:hover { color: #00ffaa; }
+      .refresh-btn-sm:hover { transform: rotate(180deg); color: #1a1a1a; }
 
+      /* ─── Handle banner ─── */
+      .handle-banner {
+        position: relative; z-index: 9;
+        display: flex; align-items: center;
+        justify-content: space-between;
+        padding: 0.6rem 1.5rem;
+        background: #fffde7;
+        border-bottom: 2px solid #1a1a1a;
+        flex-shrink: 0;
+        animation: fade-in 0.3s ease;
+      }
+
+      .handle-banner-text {
+        font-size: 0.78rem; color: #1a1a1a;
+        font-family: 'Comic Neue', cursive;
+      }
+
+      .handle-banner-btn {
+        background: #1a1a1a; color: #f5f0e8;
+        border: none;
+        border-radius: 2px 5px 3px 4px / 4px 3px 5px 2px;
+        padding: 0.3rem 0.85rem; font-family: 'Comic Neue', cursive;
+        font-size: 0.75rem; font-weight: 700;
+        cursor: pointer; transition: transform 0.15s ease;
+      }
+
+      .handle-banner-btn:hover { transform: translate(-1px, -1px); }
+
+      /* ─── Identity chip ─── */
       .identity-chip {
-        padding: 0.35rem 0.75rem;
-        border: 1px solid rgba(0,255,170,0.1); border-radius: 2px;
+        padding: 0.3rem 0.65rem;
+        border: 2px solid #1a1a1a;
+        border-radius: 2px 5px 3px 4px / 4px 3px 5px 2px;
+        background: #fff;
         font-size: 0.75rem;
       }
 
-      .handle-display { color: #00ffaa; }
-      .address-display { color: #475569; }
-
-      .logout-btn {
-        background: none; border: none; color: #334155;
-        font-size: 0.9rem; cursor: pointer; padding: 0.25rem;
-        transition: color 0.2s;
+      .address-copy-btn {
+        background: none; border: none;
+        color: #1a1a1a; font-family: 'Comic Neue', cursive;
+        font-size: 0.75rem; font-weight: 700; cursor: pointer;
+        padding: 0; transition: all 0.15s ease;
       }
 
-      .logout-btn:hover { color: #ef4444; }
+      .address-copy-btn:hover { text-decoration: underline; }
+
+      .logout-btn {
+        background: none; border: none; color: #555;
+        font-size: 0.95rem; cursor: pointer; padding: 0.25rem;
+        transition: color 0.2s, transform 0.2s;
+        font-family: 'Comic Neue', cursive;
+      }
+
+      .logout-btn:hover { color: #c0392b; transform: scale(1.15); }
+
+      /* ─── Push button ─── */
+      .push-btn {
+        background: none; border: none; font-size: 1rem;
+        cursor: pointer; padding: 0.35rem; opacity: 0.45;
+        transition: opacity 0.2s, transform 0.2s; line-height: 1;
+      }
+
+      .push-btn:hover { opacity: 1; transform: scale(1.1); }
+      .push-btn.granted { opacity: 1; cursor: default; }
+
+      /* ─── Contacts button ─── */
+      .contacts-btn {
+        background: none; border: none; color: #555;
+        cursor: pointer; padding: 0.35rem; transition: color 0.2s, transform 0.2s;
+        display: flex; align-items: center;
+      }
+
+      .contacts-btn:hover { color: #1a1a1a; transform: scale(1.1); }
 
       /* ─── Chat container ─── */
       .chat-container {
@@ -671,9 +895,9 @@ function Styles() {
       .messages {
         flex: 1; overflow-y: auto;
         padding: 1.5rem 0 1rem;
-        display: flex; flex-direction: column; gap: 0.75rem;
+        display: flex; flex-direction: column; gap: 0.85rem;
         scrollbar-width: thin;
-        scrollbar-color: rgba(0,255,170,0.1) transparent;
+        scrollbar-color: rgba(0,0,0,0.15) transparent;
       }
 
       /* ─── Welcome ─── */
@@ -682,25 +906,41 @@ function Styles() {
         align-items: center; text-align: center;
         gap: 0.75rem; padding: 2rem 1rem;
         margin: auto;
+        animation: fade-in 0.6s ease;
+      }
+
+      @keyframes fade-in {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
       }
 
       .welcome-icon {
-        font-size: 2rem; color: #00ffaa;
-        animation: pulse-icon 2s ease-in-out infinite;
+        font-size: 2rem; color: #1a1a1a;
+        animation: wobble 3s ease-in-out infinite;
       }
 
-      @keyframes pulse-icon {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.4; }
+      @keyframes wobble {
+        0%, 100% { transform: rotate(-3deg); }
+        50% { transform: rotate(3deg); }
       }
 
       .welcome-title {
-        font-size: 1.1rem; font-weight: 700; color: #f8fafc; margin: 0;
+        font-size: 1.15rem; font-weight: 700; color: #1a1a1a; margin: 0;
+        font-family: 'Comic Neue', cursive;
+        position: relative; display: inline-block;
+      }
+
+      .welcome-title::after {
+        content: '';
+        position: absolute; bottom: -3px; left: 5%; right: 5%;
+        height: 2px; background: #1a1a1a;
+        transform: skewX(-2deg);
       }
 
       .welcome-sub {
-        font-size: 0.82rem; color: #475569; margin: 0;
+        font-size: 0.83rem; color: #555; margin: 0;
         max-width: 360px; line-height: 1.7;
+        font-family: 'Comic Neue', cursive;
       }
 
       .suggestions-row {
@@ -709,65 +949,81 @@ function Styles() {
       }
 
       .suggestion-chip {
-        background: rgba(0,255,170,0.04);
-        border: 1px solid rgba(0,255,170,0.12); border-radius: 2px;
-        color: #64748b; font-family: inherit; font-size: 0.78rem;
-        padding: 0.6rem 0.85rem; cursor: pointer;
-        text-align: left; transition: all 0.2s;
+        background: #fff;
+        border: 2px solid #1a1a1a;
+        border-radius: 2px 6px 3px 5px / 5px 3px 6px 2px;
+        box-shadow: 2px 2px 0 #1a1a1a;
+        color: #333; font-family: 'Comic Neue', cursive; font-size: 0.8rem;
+        padding: 0.65rem 0.9rem; cursor: pointer;
+        text-align: left;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        animation: draw-in 0.4s ease both;
       }
 
+      .suggestion-chip:nth-child(2) { animation-delay: 0.08s; }
+      .suggestion-chip:nth-child(3) { animation-delay: 0.16s; }
+
       .suggestion-chip:hover {
-        border-color: rgba(0,255,170,0.3); color: #e2e8f0;
-        background: rgba(0,255,170,0.07);
+        transform: translate(-2px, -2px);
+        box-shadow: 4px 4px 0 #1a1a1a;
+        background: #fffde7;
       }
 
       /* ─── Mensajes ─── */
       .msg {
         display: flex;
         max-width: 85%;
+        animation: msg-appear 0.3s ease;
+      }
+
+      @keyframes msg-appear {
+        from { opacity: 0; transform: translateY(6px) scale(0.97); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
       }
 
       .msg.user { align-self: flex-end; }
       .msg.agent { align-self: flex-start; }
 
       .bubble {
-        padding: 0.75rem 1rem; border-radius: 2px;
+        padding: 0.75rem 1rem;
+        border: 2px solid #1a1a1a;
       }
 
       .bubble-user {
-        background: rgba(0,255,170,0.1);
-        border: 1px solid rgba(0,255,170,0.2);
+        background: #fff;
+        border-radius: 6px 2px 5px 3px / 3px 5px 2px 6px;
+        box-shadow: 3px 3px 0 #1a1a1a;
       }
 
       .bubble-agent {
-        background: rgba(8,11,15,0.8);
-        border: 1px solid rgba(0,255,170,0.08);
+        background: #f5f0e8;
+        border-radius: 2px 6px 3px 5px / 5px 3px 6px 2px;
+        box-shadow: 3px 3px 0 rgba(0,0,0,0.12);
+        border-color: rgba(0,0,0,0.3);
       }
 
       .bubble-text {
-        font-size: 0.85rem; line-height: 1.65; margin: 0; color: #e2e8f0;
+        font-size: 0.87rem; line-height: 1.65; margin: 0; color: #1a1a1a;
+        font-family: 'Comic Neue', cursive;
       }
 
       .tx-link {
         display: inline-block; margin-top: 0.5rem;
-        font-size: 0.72rem; color: #00ffaa; text-decoration: none;
+        font-size: 0.75rem; color: #2563eb; text-decoration: underline;
+        font-family: 'Comic Neue', cursive;
       }
 
-      .tx-link:hover { text-decoration: underline; }
-
-      .bubble-error {
-        font-size: 0.72rem; color: #ef4444; margin: 0.5rem 0 0;
-      }
+      .bubble-error { font-size: 0.72rem; color: #c0392b; margin: 0.5rem 0 0; }
 
       /* ─── Typing indicator ─── */
       .typing {
-        display: flex; align-items: center; gap: 4px;
+        display: flex; align-items: center; gap: 5px;
         padding: 0.85rem 1rem;
       }
 
       .typing span {
-        width: 6px; height: 6px; border-radius: 50%;
-        background: #00ffaa; opacity: 0.4;
+        width: 7px; height: 7px; border-radius: 50%;
+        background: #555; opacity: 0.5;
         animation: typing-dot 1.2s infinite;
       }
 
@@ -776,91 +1032,138 @@ function Styles() {
 
       @keyframes typing-dot {
         0%, 60%, 100% { opacity: 0.4; transform: translateY(0); }
-        30% { opacity: 1; transform: translateY(-4px); }
+        30% { opacity: 1; transform: translateY(-5px); }
       }
 
       /* ─── Confirm bar ─── */
       .confirm-bar {
         display: flex; gap: 0.75rem;
-        align-self: flex-start;
-        padding: 0.25rem 0;
+        align-self: flex-start; padding: 0.25rem 0;
+        animation: msg-appear 0.3s ease;
       }
 
       .confirm-btn {
-        padding: 0.6rem 1.25rem; border-radius: 2px;
-        font-family: inherit; font-size: 0.82rem;
+        padding: 0.6rem 1.25rem;
+        font-family: 'Comic Neue', cursive; font-size: 0.85rem;
         font-weight: 700; cursor: pointer;
-        transition: all 0.2s; border: none;
-        letter-spacing: 0.04em;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        border: 2px solid #1a1a1a;
+        letter-spacing: 0.03em;
       }
 
       .confirm-yes {
-        background: #00ffaa; color: #080b0f;
-        box-shadow: 0 0 12px rgba(0,255,170,0.2);
+        background: #1a1a1a; color: #f5f0e8;
+        border-radius: 3px 7px 4px 6px / 6px 4px 7px 3px;
+        box-shadow: 3px 3px 0 rgba(0,0,0,0.3);
       }
 
-      .confirm-yes:hover { background: #00cc88; }
+      .confirm-yes:hover {
+        transform: translate(-2px, -2px);
+        box-shadow: 5px 5px 0 rgba(0,0,0,0.3);
+      }
 
       .confirm-no {
-        background: rgba(239,68,68,0.1);
-        border: 1px solid rgba(239,68,68,0.3) !important;
-        color: #ef4444;
+        background: #fff; color: #c0392b;
+        border-color: #c0392b;
+        border-radius: 3px 7px 4px 6px / 6px 4px 7px 3px;
+        box-shadow: 3px 3px 0 rgba(192,57,43,0.2);
       }
 
-      .confirm-no:hover { background: rgba(239,68,68,0.2); }
+      .confirm-no:hover {
+        transform: translate(-2px, -2px);
+        box-shadow: 5px 5px 0 rgba(192,57,43,0.3);
+        background: #fff5f5;
+      }
 
       /* ─── Input area ─── */
       .input-area {
         display: flex; align-items: flex-end; gap: 0.5rem;
         padding: 0.75rem 0;
         padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
-        border-top: 1px solid rgba(0,255,170,0.07);
+        border-top: 2px solid #1a1a1a;
         flex-shrink: 0;
       }
 
       .clear-btn {
-        background: none; border: none; color: #475569;
+        background: none; border: none; color: #888;
         cursor: pointer; padding: 0.5rem;
-        transition: color 0.2s; flex-shrink: 0;
+        transition: color 0.2s, transform 0.2s; flex-shrink: 0;
         align-self: center; display: flex; align-items: center;
       }
 
-      .clear-btn:hover { color: #ef4444; }
-
-      .clear-btn:hover { color: #ef4444; }
+      .clear-btn:hover { color: #c0392b; transform: rotate(90deg); }
 
       .chat-input {
-  flex: 1; background: rgba(0,255,170,0.03);
-  border: 1px solid rgba(0,255,170,0.12); border-radius: 2px;
-  padding: 0.75rem 1rem; font-family: inherit;
-  font-size: 0.85rem; color: #e2e8f0; outline: none;
-  resize: none; line-height: 1.5;
-  transition: border-color 0.2s;
-  height: 48px; min-height: 48px; max-height: 140px;
-  field-sizing: content;
-  overflow: hidden;
-}
+        flex: 1; background: #fff;
+        border: 2px solid #1a1a1a;
+        border-radius: 3px 7px 4px 6px / 6px 4px 7px 3px;
+        padding: 0.75rem 1rem; font-family: 'Comic Neue', cursive;
+        font-size: 0.88rem; color: #1a1a1a; outline: none;
+        resize: none; line-height: 1.5;
+        transition: box-shadow 0.2s;
+        height: 48px; min-height: 48px; max-height: 140px;
+        field-sizing: content;
+        box-shadow: 2px 2px 0 #1a1a1a;
+      }
 
-      .chat-input:focus { border-color: rgba(0,255,170,0.35); }
-      .chat-input::placeholder { color: #334155; }
+      .chat-input:focus {
+        box-shadow: 4px 4px 0 #1a1a1a;
+      }
+
+      .chat-input::placeholder { color: #999; }
       .chat-input:disabled { opacity: 0.5; }
 
       .send-btn {
-        background: #00ffaa; color: #080b0f;
-        border: none; border-radius: 2px;
+        background: #1a1a1a; color: #f5f0e8;
+        border: 2px solid #1a1a1a;
+        border-radius: 3px 7px 4px 6px / 6px 4px 7px 3px;
         width: 44px; height: 44px;
-        font-size: 1.2rem; font-weight: 700;
+        font-size: 1.1rem; font-weight: 700;
         cursor: pointer; flex-shrink: 0;
-        transition: all 0.2s;
-        box-shadow: 0 0 12px rgba(0,255,170,0.2);
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        box-shadow: 3px 3px 0 rgba(0,0,0,0.25);
+        font-family: 'Comic Neue', cursive;
       }
 
       .send-btn:hover:not(:disabled) {
-        background: #00cc88;
-        box-shadow: 0 0 20px rgba(0,255,170,0.35);
+        transform: translate(-2px, -2px);
+        box-shadow: 5px 5px 0 rgba(0,0,0,0.3);
       }
 
       .send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+      /* ─── Mic button ─── */
+      .mic-btn {
+        background: #fff;
+        border: 2px solid #1a1a1a;
+        border-radius: 3px 7px 4px 6px / 6px 4px 7px 3px;
+        width: 44px; height: 44px;
+        color: #555; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        box-shadow: 2px 2px 0 #1a1a1a;
+      }
+
+      .mic-btn:hover:not(:disabled) {
+        color: #1a1a1a;
+        transform: translate(-1px, -1px);
+        box-shadow: 3px 3px 0 #1a1a1a;
+      }
+
+      .mic-btn.listening {
+        color: #c0392b;
+        border-color: #c0392b;
+        box-shadow: 2px 2px 0 #c0392b;
+        animation: mic-pulse 1s ease-in-out infinite;
+      }
+
+      .mic-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+      @keyframes mic-pulse {
+        0%, 100% { box-shadow: 2px 2px 0 #c0392b; }
+        50% { box-shadow: 4px 4px 0 #c0392b; transform: translate(-1px, -1px); }
+      }
 
       /* ─── Loading ─── */
       .loading-center {
@@ -869,154 +1172,103 @@ function Styles() {
 
       .spinner {
         width: 40px; height: 40px;
-        border: 3px solid rgba(0,255,170,0.15);
-        border-top-color: #00ffaa; border-radius: 50%;
+        border: 3px solid rgba(0,0,0,0.1);
+        border-top-color: #1a1a1a; border-radius: 50%;
         animation: spin 0.9s linear infinite;
       }
 
       @keyframes spin { to { transform: rotate(360deg); } }
 
-      /* ─── Modal logout ─── */
+      /* ─── Modals ─── */
       .modal-overlay {
         position: fixed; inset: 0; z-index: 100;
-        background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+        background: rgba(245,240,232,0.85); backdrop-filter: blur(3px);
         display: flex; align-items: center; justify-content: center;
         padding: 1.5rem;
+        animation: fade-in 0.2s ease;
       }
 
       .modal-card {
-        background: #0d1117;
-        border: 1px solid rgba(0,255,170,0.2);
-        border-radius: 4px; padding: 1.75rem;
+        background: #fff;
+        border: 2px solid #1a1a1a;
+        border-radius: 4px 10px 5px 8px / 8px 5px 10px 4px;
+        box-shadow: 6px 6px 0 #1a1a1a;
+        padding: 1.75rem;
         max-width: 360px; width: 100%;
         display: flex; flex-direction: column; gap: 1rem;
+        animation: draw-in 0.3s ease;
       }
 
       .modal-title {
-        font-size: 1rem; font-weight: 700;
-        color: #f8fafc; margin: 0;
+        font-size: 1rem; font-weight: 700; color: #1a1a1a; margin: 0;
+        font-family: 'Comic Neue', cursive;
       }
 
       .modal-desc {
-        font-size: 0.8rem; color: #64748b;
-        margin: 0; line-height: 1.6;
+        font-size: 0.82rem; color: #555; margin: 0; line-height: 1.6;
+        font-family: 'Comic Neue', cursive;
       }
 
-      .modal-actions {
-        display: flex; flex-direction: column; gap: 0.6rem;
-      }
+      .modal-actions { display: flex; flex-direction: column; gap: 0.6rem; }
 
       .modal-btn-danger {
         width: 100%; padding: 0.75rem;
-        background: rgba(239,68,68,0.1);
-        border: 1px solid rgba(239,68,68,0.3);
-        color: #ef4444; font-family: inherit;
-        font-size: 0.85rem; font-weight: 700;
-        border-radius: 2px; cursor: pointer;
-        transition: all 0.2s;
+        background: #c0392b; color: #fff;
+        border: 2px solid #1a1a1a;
+        border-radius: 3px 7px 4px 6px / 6px 4px 7px 3px;
+        box-shadow: 3px 3px 0 #1a1a1a;
+        font-family: 'Comic Neue', cursive; font-size: 0.87rem; font-weight: 700;
+        cursor: pointer; transition: transform 0.15s, box-shadow 0.15s;
       }
 
-      .modal-btn-danger:hover { background: rgba(239,68,68,0.2); }
+      .modal-btn-danger:hover { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 #1a1a1a; }
 
       .modal-btn-ghost {
         width: 100%; padding: 0.75rem;
-        background: none;
-        border: 1px solid rgba(0,255,170,0.15);
-        color: #475569; font-family: inherit;
-        font-size: 0.85rem; border-radius: 2px;
-        cursor: pointer; transition: all 0.2s;
+        background: #fff; color: #555;
+        border: 2px solid #888;
+        border-radius: 3px 7px 4px 6px / 6px 4px 7px 3px;
+        box-shadow: 2px 2px 0 #888;
+        font-family: 'Comic Neue', cursive; font-size: 0.87rem;
+        cursor: pointer; transition: transform 0.15s, box-shadow 0.15s;
       }
 
-      .modal-btn-ghost:hover { color: #e2e8f0; }
+      .modal-btn-ghost:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 #888; }
 
-      /* ─── Address copy button ─── */
-      .address-copy-btn {
-        background: none; border: none;
-        color: #475569; font-family: inherit;
-        font-size: 0.75rem; cursor: pointer;
-        padding: 0; transition: color 0.2s;
-      }
-
-      .address-copy-btn:hover { color: #00ffaa; }
-
-      /* ─── Handle banner ─── */
-      .handle-banner {
-        position: relative; z-index: 9;
-        display: flex; align-items: center;
-        justify-content: space-between;
-        padding: 0.6rem 1.5rem;
-        background: rgba(0,255,170,0.07);
-        border-bottom: 1px solid rgba(0,255,170,0.15);
-        flex-shrink: 0;
-      }
-
-      .handle-banner-text {
-        font-size: 0.75rem; color: #00ffaa; letter-spacing: 0.03em;
-      }
-
-      .handle-banner-btn {
-        background: #00ffaa; color: #080b0f;
-        border: none; border-radius: 2px;
-        padding: 0.3rem 0.75rem; font-family: inherit;
-        font-size: 0.72rem; font-weight: 700;
-        cursor: pointer; transition: all 0.2s; flex-shrink: 0;
-      }
-
-      .handle-banner-btn:hover { background: #00cc88; }
-
-      /* ─── Handle input wrap (shared) ─── */
+      /* ─── Handle input wrap ─── */
       .handle-input-wrap {
         display: flex; align-items: center;
-        border: 1px solid rgba(0,255,170,0.2); border-radius: 2px;
-        background: rgba(0,255,170,0.03); padding: 0 0.85rem;
-        transition: border-color 0.2s;
+        border: 2px solid #1a1a1a;
+        border-radius: 3px 7px 4px 6px / 6px 4px 7px 3px;
+        background: #fff; padding: 0 0.85rem;
+        box-shadow: 2px 2px 0 #1a1a1a;
+        transition: box-shadow 0.2s;
       }
 
-      .handle-input-wrap:focus-within { border-color: rgba(0,255,170,0.5); }
-      /* ─── Push notification button ─── */
-      .push-btn {
-        background: none; border: none; font-size: 1rem;
-        cursor: pointer; padding: 0.35rem; opacity: 0.4;
-        transition: opacity 0.2s; line-height: 1;
-      }
+      .handle-input-wrap:focus-within { box-shadow: 4px 4px 0 #1a1a1a; }
 
-      .push-btn:hover { opacity: 0.8; }
-      .push-btn.granted { opacity: 1; cursor: default; }
-
-      .contacts-btn {
-        background: none; border: none; color: #475569;
-        cursor: pointer; padding: 0.35rem; transition: color 0.2s;
-        display: flex; align-items: center;
-      }
-
-      .contacts-btn:hover { color: #00ffaa; }
-
-      .refresh-btn-sm {
-        background: none; border: none; color: #00ffaa;
-        cursor: pointer; padding: 0.3rem 0.5rem;
-        transition: all 0.2s; display: flex; align-items: center;
-        font-size: 1.3rem; line-height: 1;
-      }
-
-      .refresh-btn-sm:hover { opacity: 0.7; transform: rotate(180deg); transition: transform 0.4s; }
+      /* ─── Address copy button ─── */
+      .address-copy-btn:hover { text-decoration: underline; }
 
       /* ─── Contacts drawer ─── */
       .drawer-overlay {
         position: fixed; inset: 0; z-index: 100;
-        background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+        background: rgba(245,240,232,0.7); backdrop-filter: blur(3px);
+        animation: fade-in 0.2s ease;
       }
 
       .drawer {
         position: absolute; top: 0; right: 0; bottom: 0;
         width: min(340px, 90vw);
-        background: #0d1117;
-        border-left: 1px solid rgba(0,255,170,0.15);
+        background: #f5f0e8;
+        border-left: 2px solid #1a1a1a;
+        box-shadow: -6px 0 0 rgba(0,0,0,0.08);
         display: flex; flex-direction: column;
         overflow: hidden;
-        animation: slide-in 0.2s ease;
+        animation: drawer-in 0.25s ease;
       }
 
-      @keyframes slide-in {
+      @keyframes drawer-in {
         from { transform: translateX(100%); }
         to { transform: translateX(0); }
       }
@@ -1026,71 +1278,82 @@ function Styles() {
         justify-content: space-between;
         padding: 1.25rem;
         padding-top: calc(1.25rem + env(safe-area-inset-top, 0px));
-        border-bottom: 1px solid rgba(0,255,170,0.08);
+        border-bottom: 2px solid #1a1a1a;
         flex-shrink: 0;
       }
 
       .drawer-title {
-        font-size: 0.9rem; font-weight: 700;
-        color: #f8fafc; margin: 0; letter-spacing: 0.05em;
+        font-size: 0.95rem; font-weight: 700; color: #1a1a1a; margin: 0;
+        font-family: 'Comic Neue', cursive;
       }
 
       .drawer-close {
-        background: none; border: none; color: #475569;
+        background: none; border: none; color: #555;
         font-size: 1rem; cursor: pointer; padding: 0.25rem;
-        transition: color 0.2s;
+        transition: transform 0.2s; font-family: 'Comic Neue', cursive;
       }
 
-      .drawer-close:hover { color: #e2e8f0; }
+      .drawer-close:hover { transform: rotate(90deg); color: #1a1a1a; }
 
       .drawer-add {
         padding: 1rem 1.25rem;
-        border-bottom: 1px solid rgba(0,255,170,0.08);
+        border-bottom: 2px solid #1a1a1a;
         display: flex; flex-direction: column; gap: 0.6rem;
         flex-shrink: 0;
       }
 
       .drawer-section-label {
-        font-size: 0.68rem; color: #475569;
+        font-size: 0.7rem; color: #666;
         letter-spacing: 0.1em; text-transform: uppercase; margin: 0;
+        font-family: 'Comic Neue', cursive;
       }
 
       .handle-field {
         display: flex; align-items: center;
-        border: 1px solid rgba(0,255,170,0.1); border-radius: 2px;
-        background: rgba(0,255,170,0.03); padding: 0 0.75rem;
+        border: 2px solid #1a1a1a;
+        border-radius: 3px 7px 4px 6px / 6px 4px 7px 3px;
+        background: #fff; padding: 0 0.75rem;
+        box-shadow: 2px 2px 0 #1a1a1a;
       }
 
       .handle-at-sm {
-        color: #00ffaa; font-size: 0.88rem; font-weight: 700;
+        color: #1a1a1a; font-size: 0.88rem; font-weight: 700;
         flex-shrink: 0; padding-right: 0.2rem;
+        font-family: 'Comic Neue', cursive;
       }
 
       .drawer-input {
-        width: 100%; background: rgba(0,255,170,0.03);
-        border: 1px solid rgba(0,255,170,0.1); border-radius: 2px;
-        padding: 0.6rem 0.75rem; font-family: inherit;
-        font-size: 0.82rem; color: #e2e8f0; outline: none;
-        transition: border-color 0.2s;
+        width: 100%; background: #fff;
+        border: 2px solid #1a1a1a;
+        border-radius: 3px 7px 4px 6px / 6px 4px 7px 3px;
+        padding: 0.6rem 0.75rem; font-family: 'Comic Neue', cursive;
+        font-size: 0.84rem; color: #1a1a1a; outline: none;
+        box-shadow: 2px 2px 0 #1a1a1a;
+        transition: box-shadow 0.2s;
       }
 
       .handle-field .drawer-input {
         border: none; background: none; padding: 0.6rem 0;
+        box-shadow: none;
       }
 
-      .drawer-input:focus { border-color: rgba(0,255,170,0.35); }
-      .drawer-input::placeholder { color: #334155; }
+      .drawer-input:focus { box-shadow: 4px 4px 0 #1a1a1a; }
+      .drawer-input::placeholder { color: #aaa; }
 
-      .drawer-error { font-size: 0.72rem; color: #ef4444; margin: 0; }
+      .drawer-error { font-size: 0.72rem; color: #c0392b; margin: 0; font-family: 'Comic Neue', cursive; }
 
       .drawer-add-btn {
-        background: #00ffaa; color: #080b0f;
-        border: none; border-radius: 2px; padding: 0.65rem;
-        font-family: inherit; font-size: 0.82rem; font-weight: 700;
-        cursor: pointer; transition: all 0.2s;
+        background: #1a1a1a; color: #f5f0e8;
+        border: 2px solid #1a1a1a;
+        border-radius: 3px 7px 4px 6px / 6px 4px 7px 3px;
+        box-shadow: 3px 3px 0 rgba(0,0,0,0.2);
+        padding: 0.65rem; font-family: 'Comic Neue', cursive;
+        font-size: 0.85rem; font-weight: 700;
+        cursor: pointer;
+        transition: transform 0.15s, box-shadow 0.15s;
       }
 
-      .drawer-add-btn:hover:not(:disabled) { background: #00cc88; }
+      .drawer-add-btn:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 rgba(0,0,0,0.25); }
       .drawer-add-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
       .drawer-list {
@@ -1099,36 +1362,101 @@ function Styles() {
       }
 
       .drawer-empty {
-        font-size: 0.78rem; color: #334155;
+        font-size: 0.8rem; color: #888;
         text-align: center; padding: 1.5rem 0; margin: 0;
+        font-family: 'Comic Neue', cursive;
       }
 
       .drawer-contact {
         display: flex; align-items: center;
         justify-content: space-between;
         padding: 0.7rem 0.85rem;
-        border: 1px solid rgba(0,255,170,0.07); border-radius: 2px;
+        border: 2px solid #1a1a1a;
+        border-radius: 3px 7px 4px 6px / 6px 4px 7px 3px;
+        background: #fff;
+        box-shadow: 2px 2px 0 #1a1a1a;
+        animation: draw-in 0.3s ease;
+        transition: transform 0.15s, box-shadow 0.15s;
       }
+
+      .drawer-contact:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 #1a1a1a; }
 
       .contact-info { display: flex; flex-direction: column; gap: 0.15rem; }
-      .contact-alias { font-size: 0.82rem; color: #e2e8f0; font-weight: 500; }
-      .contact-handle { font-size: 0.7rem; color: #475569; }
+      .contact-alias { font-size: 0.84rem; color: #1a1a1a; font-weight: 700; font-family: 'Comic Neue', cursive; }
+      .contact-handle { font-size: 0.7rem; color: #666; font-family: 'Comic Neue', cursive; }
 
       .contact-remove {
-        background: none; border: none; color: #334155;
-        font-size: 0.75rem; cursor: pointer; padding: 0.25rem;
-        transition: color 0.2s;
+        background: none; border: none; color: #aaa;
+        font-size: 0.8rem; cursor: pointer; padding: 0.25rem;
+        transition: color 0.2s, transform 0.2s;
       }
 
-      .contact-remove:hover { color: #ef4444; }
+      .contact-remove:hover { color: #c0392b; transform: scale(1.2); }
+
+      /* ─── Transaction items ─── */
+      .tx-item {
+        display: flex; align-items: flex-start; gap: 0.75rem;
+        padding: 0.75rem 0.85rem;
+        border: 2px solid #1a1a1a;
+        border-radius: 3px 7px 4px 6px / 6px 4px 7px 3px;
+        background: #fff;
+        box-shadow: 2px 2px 0 #1a1a1a;
+        animation: draw-in 0.3s ease;
+        transition: transform 0.15s, box-shadow 0.15s;
+      }
+
+      .tx-item:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 #1a1a1a; }
+
+      .tx-icon {
+        width: 32px; height: 32px; flex-shrink: 0;
+        border: 2px solid #1a1a1a; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 0.9rem; font-weight: 700;
+        box-shadow: 2px 2px 0 #1a1a1a;
+      }
+
+      .tx-item.sent .tx-icon { background: #fff5f5; color: #c0392b; }
+      .tx-item.received .tx-icon { background: #f0fff4; color: #1a7a1a; }
+
+      .tx-info { flex: 1; display: flex; flex-direction: column; gap: 0.2rem; }
+
+      .tx-top {
+        display: flex; align-items: baseline;
+        justify-content: space-between; gap: 0.5rem;
+      }
+
+      .tx-who {
+        font-size: 0.82rem; color: #1a1a1a;
+        font-family: 'Comic Neue', cursive;
+      }
+
+      .tx-amount {
+        font-size: 0.88rem; font-weight: 700;
+        font-family: 'Comic Neue', cursive; white-space: nowrap;
+      }
+
+      .tx-amount.sent { color: #c0392b; }
+      .tx-amount.received { color: #1a7a1a; }
+
+      .tx-memo {
+        font-size: 0.74rem; color: #666; margin: 0;
+        font-family: 'Comic Neue', cursive;
+        font-style: italic;
+      }
+
+      .tx-date {
+        font-size: 0.68rem; color: #aaa; margin: 0;
+        font-family: 'Comic Neue', cursive;
+      }
 
       @media (max-width: 640px) {
         .dash-header { padding: 0.85rem 1rem 1rem; padding-top: max(0.85rem, env(safe-area-inset-top)); }
         .msg { max-width: 95%; }
         .chat-container { padding: 0 0.75rem; }
         .suggestions-row { gap: 0.4rem; }
-        .suggestion-chip { font-size: 0.75rem; padding: 0.5rem 0.75rem; }
+        .suggestion-chip { font-size: 0.76rem; padding: 0.5rem 0.75rem; }
       }
     `}</style>
   );
 }
+
