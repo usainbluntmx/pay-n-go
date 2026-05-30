@@ -131,6 +131,11 @@ REGLAS IMPORTANTES:
 - riskLevel: "low" si amount < 100, "medium" si 100-500, "high" si > 500
 - requiresConfirmation: true SOLO para send_usdc y create_link, false para check_balance y unknown
 - Para check_balance y unknown: "requiresConfirmation": false
+- Los números pueden venir escritos en texto (uno, dos, tres, diez, veinte, etc.) — conviértelos a número: "dos" → 2, "diez" → 10, "cincuenta" → 50
+- El handle puede venir sin @ — si el usuario dice "a carlos" o "a Arthur", trátalo como "@carlos" o "@arthur" (todo en minúsculas)
+- El handle puede venir con espacios o mayúsculas por voz — normalízalo: "True Dillon" → "@truedillon", "Artur" → "@artur"
+- Si el usuario dice "arroba carlos" o "at carlos", trátalo como "@carlos"
+- Ignora espacios, mayúsculas y caracteres especiales en los handles
 
 Responde ÚNICAMENTE con JSON válido, sin markdown:
 {
@@ -307,12 +312,12 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
 
         const calls = feeAmount > 0n
           ? [
-              { to: USDC, abi: ERC20_ABI, functionName: "transfer", args: [recipientAddress as Address, amountToRecipient] },
-              { to: USDC, abi: ERC20_ABI, functionName: "transfer", args: [FEE_RECIPIENT, feeAmount] },
-            ]
+            { to: USDC, abi: ERC20_ABI, functionName: "transfer", args: [recipientAddress as Address, amountToRecipient] },
+            { to: USDC, abi: ERC20_ABI, functionName: "transfer", args: [FEE_RECIPIENT, feeAmount] },
+          ]
           : [
-              { to: USDC, abi: ERC20_ABI, functionName: "transfer", args: [recipientAddress as Address, amountToRecipient] },
-            ];
+            { to: USDC, abi: ERC20_ABI, functionName: "transfer", args: [recipientAddress as Address, amountToRecipient] },
+          ];
 
         const userOpHash = await (smartAccountClient as never as {
           sendUserOperation: (params: { calls: unknown[] }) => Promise<Hash>;

@@ -92,7 +92,13 @@ export default function DashboardPage() {
       const transcript = Array.from(event.results as SpeechRecognitionResultList)
         .map((r: SpeechRecognitionResult) => r[0].transcript)
         .join("");
-      setInput(transcript);
+
+      // Limpiar "arroba" → "@" para handles
+      const cleaned = transcript
+        .replace(/\barroba\s+/gi, "@")
+        .replace(/\bat\s+/gi, "@");
+
+      setInput(cleaned);
     };
 
     recognition.onend = () => {
@@ -159,10 +165,10 @@ export default function DashboardPage() {
             )}
             <button className="contacts-btn" onClick={() => { setShowTxs(true); loadTxs(); }} title="Transacciones">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <rect x="2" y="2" width="14" height="14" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-                <line x1="5" y1="6" x2="13" y2="6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                <line x1="5" y1="9" x2="13" y2="9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                <line x1="5" y1="12" x2="10" y2="12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                <rect x="2" y="2" width="14" height="14" rx="2" stroke="currentColor" strokeWidth="1.5" />
+                <line x1="5" y1="6" x2="13" y2="6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                <line x1="5" y1="9" x2="13" y2="9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                <line x1="5" y1="12" x2="10" y2="12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
             </button>
             <button className="contacts-btn" onClick={() => setShowContacts(true)} title="Contactos">
@@ -346,13 +352,13 @@ export default function DashboardPage() {
           >
             {listening ? (
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <rect x="4" y="4" width="10" height="10" rx="2" fill="currentColor"/>
+                <rect x="4" y="4" width="10" height="10" rx="2" fill="currentColor" />
               </svg>
             ) : (
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <rect x="6.5" y="1" width="5" height="9" rx="2.5" stroke="currentColor" strokeWidth="1.5"/>
-                <path d="M3 9c0 3.314 2.686 6 6 6s6-2.686 6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                <line x1="9" y1="15" x2="9" y2="17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                <rect x="6.5" y="1" width="5" height="9" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M3 9c0 3.314 2.686 6 6 6s6-2.686 6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                <line x1="9" y1="15" x2="9" y2="17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
             )}
           </button>

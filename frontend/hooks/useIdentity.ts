@@ -274,11 +274,18 @@ export function useIdentity() {
 
       const smartAccountAddress = await createSafeAccount(owner);
 
+      let existingHandle: string | null = null;
+      try {
+        const res = await fetch(`/api/handles?address=${smartAccountAddress.toLowerCase()}`);
+        const data = await res.json();
+        existingHandle = data.handle || null;
+      } catch { /* silencioso */ }
+
       const identity: Identity = {
         mnemonic, privateKey,
         ownerAddress: owner.address,
         smartAccountAddress,
-        handle: null,
+        handle: existingHandle,
         createdAt: Date.now(),
       };
 
