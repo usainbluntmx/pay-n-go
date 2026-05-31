@@ -14,7 +14,7 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { sepolia } from "viem/chains";
+import { sepolia, arbitrumSepolia } from "viem/chains";
 import { entryPoint07Address } from "viem/account-abstraction";
 import { toSafeSmartAccount } from "permissionless/accounts";
 import { createPimlicoClient } from "permissionless/clients/pimlico";
@@ -24,6 +24,7 @@ import { createSmartAccountClient } from "permissionless";
 
 const STORAGE_KEY = "payngo_identity";
 const USDC = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as Address;
+const MXNB = "0x82B9e52b26A2954E113F94Ff26647754d5a4247D" as Address;
 const BALANCE_POLL_INTERVAL = 15_000; // 15 segundos
 
 const USDC_ABI = [
@@ -50,6 +51,7 @@ export interface Identity {
 export interface IdentityState {
   identity: Identity | null;
   balance: string | null;
+  mxnbBalance: string | null;
   loading: boolean;
   error: string | null;
   step:
@@ -97,6 +99,7 @@ export function useIdentity() {
   const [state, setState] = useState<IdentityState>({
     identity: null,
     balance: null,
+    mxnbBalance: null,
     loading: true,
     error: null,
     step: "idle",
@@ -107,8 +110,10 @@ export function useIdentity() {
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const rpcUrl = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || "";
+  const arbRpcUrl = process.env.NEXT_PUBLIC_ARBITRUM_SEPOLIA_RPC_URL || "https://sepolia-rollup.arbitrum.io/rpc";
   const pimlicoApiKey = process.env.NEXT_PUBLIC_PIMLICO_API_KEY || "";
   const bundlerUrl = `https://api.pimlico.io/v2/sepolia/rpc?apikey=${pimlicoApiKey}`;
+  const arbBundlerUrl = `https://api.pimlico.io/v2/arbitrum-sepolia/rpc?apikey=${pimlicoApiKey}`;
 
   // ─── Crear Safe Smart Account desde un owner ────────────────
 
@@ -155,7 +160,25 @@ export function useIdentity() {
     }
   }, [rpcUrl]);
 
-  // ─── Disparar notificación push via API ──────────────────────
+  // ─── Cargar balance MXNB (Arbitrum Sepolia) ──────────────────
+
+  const loadMxnbBalance = useCallback(async (address: Address): Promise<string> => {
+    try {
+      const publicClient = createPublicClient({
+        chain: arbitrumSepolia,
+        transport: http(arbRpcUrl),
+      });
+      const balance = await publicClient.readContract({
+        address: MXNB,
+        abi: USDC_ABI,
+        functionName: "balanceOf",
+        args: [address],
+      }) as bigint;
+      return formatUnits(balance, 6);
+    } catch {
+      return "0";
+    }
+  }, [arbRpcUrl]);
 
   const sendPushNotification = useCallback(async (
     title: string,
@@ -184,16 +207,17 @@ export function useIdentity() {
 
     pollIntervalRef.current = setInterval(async () => {
       const newBalance = await loadBalance(address);
+      const newMxnbBalance = await loadMxnbBalance(address);
       const prev = prevBalanceRef.current;
 
       setState(s => {
         if (s.identity?.smartAccountAddress !== address) return s;
-        return { ...s, balance: newBalance };
+        return { ...s, balance: newBalance, mxnbBalance: newMxnbBalance };
       });
 
       prevBalanceRef.current = newBalance;
     }, BALANCE_POLL_INTERVAL);
-  }, [loadBalance, sendPushNotification]);
+  }, [loadBalance, loadMxnbBalance, sendPushNotification]);
 
   // ─── Cargar identidad al montar ──────────────────────────────
 
@@ -204,10 +228,14 @@ export function useIdentity() {
       return;
     }
 
-    loadBalance(stored.smartAccountAddress).then(balance => {
+    Promise.all([
+      loadBalance(stored.smartAccountAddress),
+      loadMxnbBalance(stored.smartAccountAddress),
+    ]).then(([balance, mxnbBalance]) => {
       setState({
         identity: stored,
         balance,
+        mxnbBalance,
         loading: false,
         error: null,
         step: "ready",
@@ -218,7 +246,7 @@ export function useIdentity() {
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
-  }, [loadBalance, startPolling]);
+  }, [loadBalance, loadMxnbBalance, startPolling]);
 
   // ─── Crear nueva identidad ───────────────────────────────────
 
@@ -244,9 +272,12 @@ export function useIdentity() {
 
       saveIdentity(identity);
 
-      const balance = await loadBalance(smartAccountAddress);
+      const [balance, mxnbBalance] = await Promise.all([
+        loadBalance(smartAccountAddress),
+        loadMxnbBalance(smartAccountAddress),
+      ]);
 
-      setState({ identity, balance, loading: false, error: null, step: "ready" });
+      setState({ identity, balance, mxnbBalance, loading: false, error: null, step: "ready" });
       startPolling(smartAccountAddress, balance);
 
       return identity;
@@ -255,7 +286,7 @@ export function useIdentity() {
       setState(prev => ({ ...prev, loading: false, error: msg, step: "idle" }));
       throw e;
     }
-  }, [createSafeAccount, loadBalance, startPolling]);
+  }, [createSafeAccount, loadBalance, loadMxnbBalance, startPolling]);
 
   // ─── Recuperar identidad con mnemónico ──────────────────────
 
@@ -291,9 +322,12 @@ export function useIdentity() {
 
       saveIdentity(identity);
 
-      const balance = await loadBalance(smartAccountAddress);
+      const [balance, mxnbBalance] = await Promise.all([
+        loadBalance(smartAccountAddress),
+        loadMxnbBalance(smartAccountAddress),
+      ]);
 
-      setState({ identity, balance, loading: false, error: null, step: "ready" });
+      setState({ identity, balance, mxnbBalance, loading: false, error: null, step: "ready" });
       startPolling(smartAccountAddress, balance);
 
       return identity;
@@ -302,7 +336,7 @@ export function useIdentity() {
       setState(prev => ({ ...prev, loading: false, error: msg, step: "idle" }));
       throw e;
     }
-  }, [createSafeAccount, loadBalance, startPolling]);
+  }, [createSafeAccount, loadBalance, loadMxnbBalance, startPolling]);
 
   // ─── Actualizar handle ───────────────────────────────────────
 
@@ -320,17 +354,20 @@ export function useIdentity() {
   const refreshBalance = useCallback(async () => {
     const { identity } = state;
     if (!identity) return;
-    const balance = await loadBalance(identity.smartAccountAddress);
-    setState(prev => ({ ...prev, balance }));
+    const [balance, mxnbBalance] = await Promise.all([
+      loadBalance(identity.smartAccountAddress),
+      loadMxnbBalance(identity.smartAccountAddress),
+    ]);
+    setState(prev => ({ ...prev, balance, mxnbBalance }));
     prevBalanceRef.current = balance;
-  }, [state, loadBalance]);
+  }, [state, loadBalance, loadMxnbBalance]);
 
   // ─── Cerrar sesión ───────────────────────────────────────────
 
   const logout = useCallback(() => {
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     clearIdentity();
-    setState({ identity: null, balance: null, loading: false, error: null, step: "idle" });
+    setState({ identity: null, balance: null, mxnbBalance: null, loading: false, error: null, step: "idle" });
     window.location.href = "/";
   }, []);
 
@@ -374,6 +411,46 @@ export function useIdentity() {
     return { smartAccountClient, safeAccount };
   }, [state, rpcUrl, bundlerUrl]);
 
+  // ─── Smart Account Client para Arbitrum Sepolia (MXNB) ───────
+
+  const getArbSmartAccountClient = useCallback(async () => {
+    const { identity } = state;
+    if (!identity) throw new Error("No identity found");
+
+    const owner = privateKeyToAccount(identity.privateKey);
+
+    const publicClient = createPublicClient({
+      chain: arbitrumSepolia,
+      transport: http(arbRpcUrl),
+    });
+
+    const pimlicoClient = createPimlicoClient({
+      transport: http(arbBundlerUrl),
+      entryPoint: { address: entryPoint07Address, version: "0.7" },
+    });
+
+    const safeAccount = await toSafeSmartAccount({
+      client: publicClient as never,
+      owners: [owner as never],
+      entryPoint: { address: entryPoint07Address, version: "0.7" },
+      version: "1.4.1",
+    });
+
+    const smartAccountClient = createSmartAccountClient({
+      account: safeAccount as never,
+      chain: arbitrumSepolia,
+      bundlerTransport: http(arbBundlerUrl),
+      paymaster: pimlicoClient,
+      userOperation: {
+        estimateFeesPerGas: async () => {
+          return (await pimlicoClient.getUserOperationGasPrice()).fast;
+        },
+      },
+    } as never);
+
+    return { smartAccountClient, safeAccount };
+  }, [state, arbRpcUrl, arbBundlerUrl]);
+
   return {
     ...state,
     createIdentity,
@@ -382,6 +459,7 @@ export function useIdentity() {
     refreshBalance,
     logout,
     getSmartAccountClient,
+    getArbSmartAccountClient,
     sendPushNotification,
     isReady: state.step === "ready",
     hasIdentity: !!state.identity,

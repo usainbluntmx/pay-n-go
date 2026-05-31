@@ -16,14 +16,15 @@ export type AgentAction =
 export interface AgentSuggestion {
   action: AgentAction;
   params: {
-    recipient?: string;           // handle @richi o address 0x...
-    recipientAddress?: string;    // address resuelta
-    amount?: string;              // USDC que recibirá el receptor
-    amountWithFee?: string;       // USDC total que pagará el usuario
-    fee?: string;                 // comisión del protocolo
-    feePercent?: string;          // porcentaje de comisión
+    recipient?: string;
+    recipientAddress?: string;
+    amount?: string;
+    amountWithFee?: string;
+    fee?: string;
+    feePercent?: string;
     memo?: string;
     linkId?: number;
+    token?: "USDC" | "MXNB";
   };
   reasoning: string;
   riskLevel: "low" | "medium" | "high";
@@ -71,8 +72,28 @@ export function useAgent(saveTx?: (tx: {
   amount: string;
   memo: string | null;
 }) => Promise<unknown>) {
-  const { identity, balance, getSmartAccountClient, refreshBalance, sendPushNotification } = useIdentity();
+  const { identity, balance, mxnbBalance, getSmartAccountClient, getArbSmartAccountClient, refreshBalance, sendPushNotification } = useIdentity();
   const { resolveHandle } = useHandle();
+
+  // ─── Cargar contactos del localStorage ───────────────────────
+  const getContacts = useCallback((): Array<{ alias: string; handle: string }> => {
+    if (typeof window === "undefined") return [];
+    try {
+      return JSON.parse(localStorage.getItem("payngo_contacts") || "[]");
+    } catch { return []; }
+  }, []);
+
+  // ─── Resolver alias de contacto → handle ─────────────────────
+  const resolveContactAlias = useCallback((input: string): string | null => {
+    const contacts = getContacts();
+    const normalized = input.toLowerCase().trim();
+    const found = contacts.find(c =>
+      c.alias.toLowerCase() === normalized ||
+      c.alias.toLowerCase().includes(normalized) ||
+      normalized.includes(c.alias.toLowerCase())
+    );
+    return found ? found.handle : null;
+  }, [getContacts]);
 
   const [state, setState] = useState<AgentState>({
     messages: [],
@@ -108,34 +129,44 @@ export function useAgent(saveTx?: (tx: {
     setState(prev => ({ ...prev, loading: true, error: null, pendingSuggestion: null }));
 
     try {
-      const systemPrompt = `Eres el AI Payment Agent de Pay'n Go — una app de pagos en USDC para usuarios no técnicos.
+      const contacts = getContacts();
+      const contactsContext = contacts.length > 0
+        ? `\nContactos guardados del usuario:\n${contacts.map(c => `- "${c.alias}" → @${c.handle}`).join("\n")}\n`
+        : "";
+
+      const systemPrompt = `Eres el AI Payment Agent de Pay'n Go — una app de pagos en stablecoins para usuarios no técnicos.
 
 Tu trabajo es interpretar instrucciones de pago en lenguaje natural y devolver una acción estructurada.
 
 Usuario actual:
 - Handle: ${identity.handle ? "@" + identity.handle : "sin handle"}
 - Smart Account: ${identity.smartAccountAddress}
+- Balance USDC: ${balance || "0"} USDC (Dólares Digitales)
+- Balance MXNB: ${mxnbBalance || "0"} MXNB (Pesos Digitales)
+${contactsContext}
+Tokens disponibles:
+- USDC: dólares digitales. Usa cuando el usuario diga "dólares", "dolares", "USDC", "dollars"
+- MXNB: pesos mexicanos digitales. Usa cuando el usuario diga "pesos", "MXNB", "pesos mexicanos"
 
 Acciones disponibles:
-1. send_usdc — Enviar USDC a otro usuario (por handle @nombre o address 0x...)
-2. create_link — Crear un link de pago que otros pueden pagar
+1. send_usdc — Enviar USDC o MXNB a otro usuario
+2. create_link — Crear un link de pago
 3. check_balance — Consultar el balance actual
 4. unknown — Si la instrucción no es clara
 
 REGLAS IMPORTANTES:
 - Si el usuario menciona un @handle como destinatario, ponlo en recipient como "@handle"
 - Si el usuario menciona una address 0x..., ponla en recipient como la address
+- Si el usuario menciona un nombre o alias que coincide con un contacto guardado, usa el handle de ese contacto
 - El campo amount es EXACTAMENTE lo que recibirá el destinatario
+- El campo token debe ser "USDC" si habla de dólares, "MXNB" si habla de pesos. Default: "USDC"
 - NUNCA inventes addresses ni handles
 - Si falta información (destinatario o monto), action debe ser "unknown" y en reasoning explica qué falta
 - riskLevel: "low" si amount < 100, "medium" si 100-500, "high" si > 500
 - requiresConfirmation: true SOLO para send_usdc y create_link, false para check_balance y unknown
-- Para check_balance y unknown: "requiresConfirmation": false
-- Los números pueden venir escritos en texto (uno, dos, tres, diez, veinte, etc.) — conviértelos a número: "dos" → 2, "diez" → 10, "cincuenta" → 50
-- El handle puede venir sin @ — si el usuario dice "a carlos" o "a Arthur", trátalo como "@carlos" o "@arthur" (todo en minúsculas)
-- El handle puede venir con espacios o mayúsculas por voz — normalízalo: "True Dillon" → "@truedillon", "Artur" → "@artur"
-- Si el usuario dice "arroba carlos" o "at carlos", trátalo como "@carlos"
-- Ignora espacios, mayúsculas y caracteres especiales en los handles
+- Los números pueden venir en texto: "dos" → 2, "diez" → 10, "cincuenta" → 50
+- El handle puede venir sin @ — normaliza a minúsculas: "carlos" → "@carlos", "True Dillon" → "@truedillon"
+- Si el usuario dice "arroba carlos" trátalo como "@carlos"
 
 Responde ÚNICAMENTE con JSON válido, sin markdown:
 {
@@ -143,7 +174,8 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
   "params": {
     "recipient": "@handle o 0x...",
     "amount": "10.00",
-    "memo": "razón del pago"
+    "memo": "razón del pago",
+    "token": "USDC" | "MXNB"
   },
   "reasoning": "explicación breve en español",
   "riskLevel": "low" | "medium" | "high",
@@ -170,19 +202,36 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
       const clean = raw.replace(/```json|```/g, "").trim();
       const parsed = JSON.parse(clean) as AgentSuggestion;
 
-      // Resolver handle → address si aplica
+      // Resolver recipient: primero contactos, luego handle/address
       if (parsed.params.recipient) {
-        const resolved = await resolveHandle(parsed.params.recipient);
-        parsed.params.recipientAddress = resolved || undefined;
+        const recipientInput = parsed.params.recipient;
 
-        if (parsed.action === "send_usdc" && !resolved) {
-          // Handle no encontrado
-          addMessage({
-            role: "agent",
-            content: `No encontré el usuario "${parsed.params.recipient}". Verifica que el handle o address sea correcto.`,
-          });
-          setState(prev => ({ ...prev, loading: false }));
-          return;
+        // 1. Si es una address 0x, usarla directamente
+        if (recipientInput.startsWith("0x") && recipientInput.length === 42) {
+          parsed.params.recipientAddress = recipientInput;
+        } else {
+          // 2. Buscar en contactos por alias (por si Claude devolvió el alias en lugar del handle)
+          const contactHandle = resolveContactAlias(recipientInput.replace(/^@/, ""));
+          const handleToResolve = contactHandle
+            ? contactHandle
+            : recipientInput.replace(/^@/, "");
+
+          const resolved = await resolveHandle(handleToResolve);
+          parsed.params.recipientAddress = resolved || undefined;
+
+          // Actualizar el recipient con el handle correcto para mostrar en UI
+          if (contactHandle) {
+            parsed.params.recipient = "@" + contactHandle;
+          }
+
+          if (parsed.action === "send_usdc" && !resolved) {
+            addMessage({
+              role: "agent",
+              content: `No encontré el usuario "${recipientInput}". Verifica que el handle o alias sea correcto.`,
+            });
+            setState(prev => ({ ...prev, loading: false }));
+            return;
+          }
         }
       }
 
@@ -206,41 +255,23 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
       let agentMessage = parsed.reasoning;
 
       if (parsed.action === "send_usdc" && parsed.params.amount) {
+        const tokenName = parsed.params.token || "USDC";
         const recipient = parsed.params.recipient || "";
-        agentMessage = `Entendido. Quieres enviar **${parsed.params.amount} USDC** a **${recipient}**`;
+        agentMessage = `Entendido. Quieres enviar **${parsed.params.amount} ${tokenName}** a **${recipient}**`;
         if (parsed.params.memo) agentMessage += ` por "${parsed.params.memo}"`;
         agentMessage += `.\n\n`;
         agentMessage += `📋 **Resumen:**\n`;
-        agentMessage += `• El receptor recibirá: **${parsed.params.amount} USDC**\n`;
-        agentMessage += `• Comisión del servicio (0.3%): **${parsed.params.fee} USDC**\n`;
-        agentMessage += `• **Total que saldrá de tu cuenta: ${parsed.params.amountWithFee} USDC**\n\n`;
+        agentMessage += `• El receptor recibirá: **${parsed.params.amount} ${tokenName}**\n`;
+        agentMessage += `• Comisión del servicio (0.3%): **${parsed.params.fee} ${tokenName}**\n`;
+        agentMessage += `• **Total que saldrá de tu cuenta: ${parsed.params.amountWithFee} ${tokenName}**\n\n`;
         agentMessage += `¿Confirmas el envío?`;
       } else if (parsed.action === "create_link" && parsed.params.amount) {
         agentMessage = `Voy a crear un link de pago de **${parsed.params.amount} USDC**`;
         if (parsed.params.memo) agentMessage += ` para "${parsed.params.memo}"`;
         agentMessage += `. ¿Confirmas?`;
       } else if (parsed.action === "check_balance") {
-        // Obtener balance fresco directo de la chain
-        let currentBalance = balance;
-        try {
-          const { createPublicClient, http, formatUnits } = await import("viem");
-          const { sepolia } = await import("viem/chains");
-          const USDC_ADDR = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
-          const BALANCE_ABI = [{ type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
-          const pc = createPublicClient({ chain: sepolia, transport: http(process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || "") });
-          const raw = await pc.readContract({ address: USDC_ADDR as `0x${string}`, abi: BALANCE_ABI, functionName: "balanceOf", args: [identity.smartAccountAddress as `0x${string}`] }) as bigint;
-          currentBalance = formatUnits(raw, 6);
-          // Actualizar el estado del hook de identidad también
-          refreshBalance();
-        } catch {
-          currentBalance = balance;
-        }
-
-        const balanceDisplay = currentBalance !== null ? currentBalance : "desconocido";
-        agentMessage = `Tu balance actual es **${balanceDisplay} USDC**.`;
-        if (!currentBalance || parseFloat(currentBalance) === 0) {
-          agentMessage += `\n\nAún no tienes fondos. Para recibir USDC comparte tu dirección:\n**${identity.smartAccountAddress}**`;
-        }
+        agentMessage = `Tus balances actuales:\n\n• **${balance || "0"} USDC** (Dólares Digitales)\n• **${mxnbBalance || "0"} MXNB** (Pesos Digitales)`;
+        refreshBalance();
         parsed.requiresConfirmation = false;
       } else if (parsed.action === "unknown") {
         const lc = instruction.toLowerCase();
@@ -278,7 +309,7 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
       });
       setState(prev => ({ ...prev, loading: false, error: msg }));
     }
-  }, [identity, balance, resolveHandle, addMessage]);
+  }, [identity, balance, mxnbBalance, resolveHandle, resolveContactAlias, getContacts, addMessage]);
 
   // ─── Ejecutar sugerencia confirmada ──────────────────────────
 
@@ -293,13 +324,20 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
     });
 
     try {
-      const { smartAccountClient, safeAccount } = await getSmartAccountClient();
+      const token = suggestion.params.token || "USDC";
+      const isMxnb = token === "MXNB";
+
+      const { smartAccountClient } = isMxnb
+        ? await getArbSmartAccountClient()
+        : await getSmartAccountClient();
 
       if (suggestion.action === "send_usdc") {
         const { recipientAddress, amountWithFee } = suggestion.params;
         if (!recipientAddress || !amountWithFee) throw new Error("Faltan datos del pago");
 
-        const USDC = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as Address;
+        const TOKEN_ADDR = isMxnb
+          ? "0x82B9e52b26A2954E113F94Ff26647754d5a4247D" as Address
+          : "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as Address;
         const FEE_RECIPIENT = "0x9dabBF114698bd9bFBF6222b9FD6Cd967ECD3850" as Address;
 
         const ERC20_ABI = [
@@ -312,11 +350,11 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
 
         const calls = feeAmount > 0n
           ? [
-            { to: USDC, abi: ERC20_ABI, functionName: "transfer", args: [recipientAddress as Address, amountToRecipient] },
-            { to: USDC, abi: ERC20_ABI, functionName: "transfer", args: [FEE_RECIPIENT, feeAmount] },
+            { to: TOKEN_ADDR, abi: ERC20_ABI, functionName: "transfer", args: [recipientAddress as Address, amountToRecipient] },
+            { to: TOKEN_ADDR, abi: ERC20_ABI, functionName: "transfer", args: [FEE_RECIPIENT, feeAmount] },
           ]
           : [
-            { to: USDC, abi: ERC20_ABI, functionName: "transfer", args: [recipientAddress as Address, amountToRecipient] },
+            { to: TOKEN_ADDR, abi: ERC20_ABI, functionName: "transfer", args: [recipientAddress as Address, amountToRecipient] },
           ];
 
         const userOpHash = await (smartAccountClient as never as {
@@ -329,10 +367,8 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
 
         const txHash = receipt.receipt.transactionHash;
 
-        // Actualizar balance
         await refreshBalance();
 
-        // Guardar tx para el emisor
         if (saveTx) {
           await saveTx({
             type: "sent",
@@ -340,29 +376,26 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
             counterpartHandle: suggestion.params.recipient?.startsWith("@")
               ? suggestion.params.recipient.slice(1)
               : null,
-            amount: suggestion.params.amount!,
+            amount: `${suggestion.params.amount} ${token}`,
             memo: suggestion.params.memo || null,
           });
         }
 
-        // Notificar al emisor que el pago fue enviado
+        // Notificar al emisor
         sendPushNotification(
           "✅ Pago enviado",
-          `Enviaste ${suggestion.params.amount} USDC a ${suggestion.params.recipient}`,
+          `Enviaste ${suggestion.params.amount} ${token} a ${suggestion.params.recipient}`,
           identity.smartAccountAddress
         );
 
-        // Notificar al receptor que recibió un pago
-        // Buscar la suscripción del receptor por su address
         // Notificar y registrar tx para el receptor
         if (suggestion.params.recipientAddress) {
           sendPushNotification(
             "💸 Pago recibido",
-            `Recibiste ${suggestion.params.amount} USDC${identity.handle ? ` de @${identity.handle}` : ""}`,
+            `Recibiste ${suggestion.params.amount} ${token}${identity.handle ? ` de @${identity.handle}` : ""}`,
             suggestion.params.recipientAddress
           );
 
-          // Guardar tx en historial del receptor
           try {
             await fetch("/api/transactions", {
               method: "POST",
@@ -374,7 +407,7 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
                   type: "received",
                   counterpartAddress: identity.smartAccountAddress,
                   counterpartHandle: identity.handle || null,
-                  amount: suggestion.params.amount!,
+                  amount: `${suggestion.params.amount} ${token}`,
                   memo: suggestion.params.memo || null,
                   timestamp: Date.now(),
                 },
@@ -385,7 +418,7 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
 
         addMessage({
           role: "agent",
-          content: `✅ Pago enviado exitosamente. **${suggestion.params.amount} USDC** llegaron a **${suggestion.params.recipient}**. Gas pagado por Pimlico — sin costo para ti.`,
+          content: `✅ Pago enviado exitosamente. **${suggestion.params.amount} ${token}** llegaron a **${suggestion.params.recipient}**. Gas pagado por Pimlico — sin costo para ti.`,
           txHash,
         });
 
@@ -407,7 +440,7 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
     } finally {
       setState(prev => ({ ...prev, executingTx: false }));
     }
-  }, [identity, getSmartAccountClient, refreshBalance, sendPushNotification, addMessage]);
+  }, [identity, getSmartAccountClient, getArbSmartAccountClient, refreshBalance, sendPushNotification, addMessage]);
 
   // ─── Cancelar sugerencia pendiente ───────────────────────────
 

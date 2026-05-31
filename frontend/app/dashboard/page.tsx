@@ -8,7 +8,7 @@ import { usePush } from "@/hooks/usePush";
 import { useTransactions, Transaction } from "@/hooks/useTransactions";
 
 export default function DashboardPage() {
-  const { identity, balance, refreshBalance, logout, setHandle, isReady } = useIdentity();
+  const { identity, balance, mxnbBalance, refreshBalance, logout, setHandle, isReady } = useIdentity();
   const { txs, loadTxs, saveTx } = useTransactions(identity?.smartAccountAddress);
   const {
     messages,
@@ -188,16 +188,47 @@ export default function DashboardPage() {
             <button className="logout-btn" onClick={() => setConfirmLogout(true)} title="Cerrar sesión">⏻</button>
           </div>
         </div>
-        <div className="balance-center">
-          <p className="balance-label-big">Balance disponible</p>
-          <div className="balance-amount-row">
-            <span className="balance-big">
-              {balance !== null ? balance : "—"}
-            </span>
-            <span className="balance-currency">USDC</span>
-            <button className="refresh-btn-sm" onClick={refreshBalance} title="Actualizar balance">
-              ↻
-            </button>
+        <div className="assets-section">
+          <div className="asset-row">
+            <div className="asset-icon usdc-icon">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="16" cy="16" r="16" fill="#2775CA"/>
+                <path d="M20.022 18.124c0-2.124-1.28-2.852-3.84-3.156-1.828-.228-2.192-.684-2.192-1.48 0-.796.556-1.302 1.668-1.302 1 0 1.556.34 1.836 1.184a.49.49 0 00.464.308h1.044a.44.44 0 00.44-.452v-.032a3.14 3.14 0 00-2.84-2.584V9.584a.5.5 0 00-.5-.5h-.988a.5.5 0 00-.5.5v1.02c-1.608.228-2.62 1.28-2.62 2.696 0 2.04 1.252 2.8 3.812 3.1 1.7.204 2.22.588 2.22 1.536 0 .948-.832 1.584-1.972 1.584-1.548 0-2.08-.652-2.248-1.544a.468.468 0 00-.46-.388h-1.108a.44.44 0 00-.44.452v.032c.268 1.648 1.364 2.8 3.016 3.1v1.04a.5.5 0 00.5.5h.988a.5.5 0 00.5-.5v-1.02c1.616-.26 2.66-1.376 2.66-2.868z" fill="white"/>
+              </svg>
+            </div>
+            <div className="asset-info">
+              <span className="asset-name">USDC</span>
+              <span className="asset-fullname">Dólares Digitales</span>
+            </div>
+            <div className="asset-balance">
+              <span className="asset-amount">
+                {balance !== null ? parseFloat(balance).toFixed(2) : "—"}
+              </span>
+              <div className="asset-balance-row">
+                <span className="asset-symbol">USDC</span>
+                <button className="refresh-btn-sm" onClick={refreshBalance} title="Actualizar">↻</button>
+              </div>
+            </div>
+          </div>
+          <div className="asset-row" style={{ animationDelay: "0.08s" }}>
+            <div className="asset-icon mxnb-icon">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                <circle cx="16" cy="16" r="16" fill="#006847"/>
+                <text x="16" y="21" textAnchor="middle" fill="white" fontSize="13" fontWeight="bold" fontFamily="sans-serif">$</text>
+              </svg>
+            </div>
+            <div className="asset-info">
+              <span className="asset-name">MXNB</span>
+              <span className="asset-fullname">Pesos Digitales</span>
+            </div>
+            <div className="asset-balance">
+              <span className="asset-amount">
+                {mxnbBalance !== null ? parseFloat(mxnbBalance).toFixed(2) : "—"}
+              </span>
+              <div className="asset-balance-row">
+                <span className="asset-symbol">MXNB</span>
+              </div>
+            </div>
           </div>
         </div>
       </header>
@@ -269,8 +300,8 @@ export default function DashboardPage() {
               <div className="suggestions-row">
                 {[
                   "Envía 10 USDC a @carlos por el diseño",
-                  "Crea un link de 50 USDC para la renta",
-                  "¿A quién le puedo enviar USDC?",
+                  "Envía 100 pesos a @alicia por la comida",
+                  "¿A quién le puedo enviar dinero?",
                 ].map((s) => (
                   <button
                     key={s}
@@ -527,7 +558,7 @@ function TxsDrawer({ txs, onClose }: { txs: Transaction[]; onClose: () => void }
                       </strong>
                     </span>
                     <span className={"tx-amount " + tx.type}>
-                      {tx.type === "sent" ? "-" : "+"}{tx.amount} USDC
+                      {tx.type === "sent" ? "-" : "+"}{tx.amount}
                     </span>
                   </div>
                   {tx.memo && (
@@ -783,6 +814,7 @@ function Styles() {
       }
 
       .usdc-icon { background: #2775CA; }
+      .mxnb-icon { background: #006847; }
 
       .asset-info {
         display: flex; flex-direction: column; gap: 0.15rem; flex: 1;
@@ -805,6 +837,16 @@ function Styles() {
       }
 
       .asset-symbol { font-size: 0.65rem; color: #666; }
+
+      .asset-balance-row {
+        display: flex; align-items: center; gap: 0.25rem;
+      }
+
+      .asset-fullname {
+        font-size: 0.72rem; color: #666;
+        font-family: 'Comic Neue', cursive;
+        font-style: italic;
+      }
 
       .refresh-btn-sm {
         background: none; border: none; color: #555;
