@@ -84,16 +84,41 @@ export function useAgent(saveTx?: (tx: {
   }, []);
 
   // ─── Resolver alias de contacto → handle ─────────────────────
+  // ─── Normalización fonética ──────────────────────────────────
+
+  const normalizePhonetic = useCallback((text: string): string => {
+    return text
+      .toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // quitar acentos
+      .replace(/\bk/g, "c")        // karol → carol, karlos → carlos
+      .replace(/ph/g, "f")         // philippe → filipe
+      .replace(/ck/g, "c")         // nick → nic
+      .replace(/qu/g, "cu")        // enrique → encurique (aproximación)
+      .replace(/\bw/g, "v")        // walter → valter
+      .replace(/z/g, "s")          // gonzalez → gonsales
+      .replace(/x/g, "s")          // ximena → simena
+      .replace(/\by/g, "i")        // yolanda → iolanda
+      .replace(/\s+/g, " ")
+      .trim();
+  }, []);
+
   const resolveContactAlias = useCallback((input: string): string | null => {
     const contacts = getContacts();
-    const normalized = input.toLowerCase().trim();
-    const found = contacts.find(c =>
-      c.alias.toLowerCase() === normalized ||
-      c.alias.toLowerCase().includes(normalized) ||
-      normalized.includes(c.alias.toLowerCase())
-    );
+    const normalizedInput = normalizePhonetic(input);
+
+    const found = contacts.find(c => {
+      const normalizedAlias = normalizePhonetic(c.alias);
+      const normalizedHandle = normalizePhonetic(c.handle);
+      return (
+        normalizedAlias === normalizedInput ||
+        normalizedAlias.includes(normalizedInput) ||
+        normalizedInput.includes(normalizedAlias) ||
+        normalizedHandle === normalizedInput
+      );
+    });
+
     return found ? found.handle : null;
-  }, [getContacts]);
+  }, [getContacts, normalizePhonetic]);
 
   const [state, setState] = useState<AgentState>({
     messages: [],
@@ -165,6 +190,7 @@ REGLAS IMPORTANTES:
 - riskLevel: "low" si amount < 100, "medium" si 100-500, "high" si > 500
 - requiresConfirmation: true SOLO para send_usdc y create_link, false para check_balance y unknown
 - Los números pueden venir en texto: "dos" → 2, "diez" → 10, "cincuenta" → 50
+- Los nombres pueden tener variantes fonéticas (carol/karol, carlos/karlos, ximena/jimena) — intenta resolverlas antes de declararlos no encontrados
 - El handle puede venir sin @ — normaliza a minúsculas: "carlos" → "@carlos", "True Dillon" → "@truedillon"
 - Si el usuario dice "arroba carlos" trátalo como "@carlos"
 
@@ -309,7 +335,7 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
       });
       setState(prev => ({ ...prev, loading: false, error: msg }));
     }
-  }, [identity, balance, mxnbBalance, resolveHandle, resolveContactAlias, getContacts, addMessage]);
+  }, [identity, balance, mxnbBalance, resolveHandle, resolveContactAlias, normalizePhonetic, getContacts, addMessage]);
 
   // ─── Ejecutar sugerencia confirmada ──────────────────────────
 

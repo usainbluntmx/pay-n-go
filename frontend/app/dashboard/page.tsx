@@ -1,11 +1,90 @@
 "use client";
 
+import "driver.js/dist/driver.css";
 import { useState, useEffect, useRef } from "react";
 import { useIdentity } from "@/hooks/useIdentity";
 import { useAgent, AgentMessage } from "@/hooks/useAgent";
 import { useHandle } from "@/hooks/useHandle";
 import { usePush } from "@/hooks/usePush";
 import { useTransactions, Transaction } from "@/hooks/useTransactions";
+
+// ─── Tour Key ─────────────────────────────────────────────────
+const TOUR_KEY = "payngo_tour_done";
+
+function useTour() {
+  const startTour = async () => {
+    const { driver } = await import("driver.js");
+
+    const driverObj = driver({
+      animate: true,
+      overlayOpacity: 0.75,
+      stagePadding: 8,
+      stageRadius: 6,
+      allowClose: true,
+      nextBtnText: "Siguiente →",
+      prevBtnText: "← Anterior",
+      doneBtnText: "¡Entendido! ✓",
+      onDestroyStarted: () => {
+        localStorage.setItem(TOUR_KEY, "true");
+        driverObj.destroy();
+      },
+      steps: [
+        {
+          element: "#tour-assets",
+          popover: {
+            title: "💰 Tus activos",
+            description: "Aquí ves tu balance disponible. USDC son dólares digitales y MXNB son pesos mexicanos digitales. Puedes enviar y recibir ambos.",
+            side: "bottom", align: "center",
+          },
+        },
+        {
+          element: "#tour-agent",
+          popover: {
+            title: "🤖 AI Payment Agent",
+            description: 'Escribe aquí lo que quieres hacer en lenguaje natural. Por ejemplo: "Envía 10 dólares a @carlos por la cena". El agente se encarga del resto.',
+            side: "top", align: "center",
+          },
+        },
+        {
+          element: "#tour-mic",
+          popover: {
+            title: "🎙️ Entrada de voz",
+            description: "¿No quieres escribir? Presiona este botón y di en voz alta lo que quieres hacer. El agente te entiende.",
+            side: "top", align: "center",
+          },
+        },
+        {
+          element: "#tour-txs",
+          popover: {
+            title: "📋 Historial",
+            description: "Aquí puedes ver todos los pagos que has enviado y recibido, con el monto, el concepto y la fecha de cada uno.",
+            side: "bottom", align: "center",
+          },
+        },
+        {
+          element: "#tour-contacts",
+          popover: {
+            title: "👤 Contactos",
+            description: "Guarda los @handles de tus contactos con un alias. Así puedes decir 'Envía 50 pesos a Carlos Trabajo' sin tener que recordar su handle exacto.",
+            side: "bottom", align: "center",
+          },
+        },
+        {
+          element: "#tour-handle",
+          popover: {
+            title: "✦ Tu @handle",
+            description: "Este es tu identificador en Pay'n Go. Compártelo con quien quieras para recibir pagos. Tócalo para copiar tu dirección de wallet.",
+            side: "bottom", align: "center",
+          },
+        },
+      ],
+    });
+
+    driverObj.drive();
+  };
+
+  return { startTour };
+}
 
 export default function DashboardPage() {
   const { identity, balance, mxnbBalance, refreshBalance, logout, setHandle, isReady } = useIdentity();
@@ -26,6 +105,7 @@ export default function DashboardPage() {
   );
 
   const [input, setInput] = useState("");
+  const { startTour } = useTour();
   const [mounted, setMounted] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [showContacts, setShowContacts] = useState(false);
@@ -35,6 +115,13 @@ export default function DashboardPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    if (isReady && identity && !localStorage.getItem(TOUR_KEY)) {
+      const timer = setTimeout(() => startTour(), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [isReady, identity?.smartAccountAddress]);
 
   useEffect(() => {
     if (isReady && identity) loadTxs();
@@ -163,7 +250,8 @@ export default function DashboardPage() {
                 🔔
               </button>
             )}
-            <button className="contacts-btn" onClick={() => { setShowTxs(true); loadTxs(); }} title="Transacciones">
+            <button className="help-btn" onClick={startTour} title="Guía de la app">?</button>
+            <button id="tour-txs" className="contacts-btn" onClick={() => { setShowTxs(true); loadTxs(); }} title="Transacciones">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
                 <rect x="2" y="2" width="14" height="14" rx="2" stroke="currentColor" strokeWidth="1.5" />
                 <line x1="5" y1="6" x2="13" y2="6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -171,13 +259,13 @@ export default function DashboardPage() {
                 <line x1="5" y1="12" x2="10" y2="12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
             </button>
-            <button className="contacts-btn" onClick={() => setShowContacts(true)} title="Contactos">
+            <button id="tour-contacts" className="contacts-btn" onClick={() => setShowContacts(true)} title="Contactos">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <circle cx="9" cy="6" r="3" stroke="currentColor" strokeWidth="1.5" />
                 <path d="M2 15c0-3.314 3.134-6 7-6s7 2.686 7 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
             </button>
-            <div className="identity-chip">
+            <div className="identity-chip" id="tour-handle">
               <button className="address-copy-btn" onClick={copyAddress} title="Copiar dirección de wallet">
                 {identity.handle
                   ? (copied ? "✓ Copiado" : `@${identity.handle}`)
@@ -188,7 +276,7 @@ export default function DashboardPage() {
             <button className="logout-btn" onClick={() => setConfirmLogout(true)} title="Cerrar sesión">⏻</button>
           </div>
         </div>
-        <div className="assets-section">
+        <div className="assets-section" id="tour-assets">
           <div className="asset-row">
             <div className="asset-icon usdc-icon">
               <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -286,7 +374,7 @@ export default function DashboardPage() {
       )}
 
       {/* ─── CHAT ─── */}
-      <div className="chat-container">
+      <div className="chat-container" id="tour-agent">
         <div className="messages">
           {messages.length === 0 && (
             <div className="welcome-msg">
@@ -377,6 +465,7 @@ export default function DashboardPage() {
           />
           <button
             className={"mic-btn" + (listening ? " listening" : "")}
+            id="tour-mic"
             onClick={startVoice}
             title={listening ? "Detener" : "Hablar"}
             disabled={loading || executingTx}
@@ -930,6 +1019,26 @@ function Styles() {
       }
 
       .contacts-btn:hover { color: #1a1a1a; transform: scale(1.1); }
+
+      /* ─── Help / Tour button ─── */
+      .help-btn {
+        background: #1a1a1a; color: #f5f0e8;
+        border: 2px solid #1a1a1a;
+        border-radius: 50%;
+        width: 28px; height: 28px;
+        font-size: 0.8rem; font-weight: 700;
+        cursor: pointer; display: flex;
+        align-items: center; justify-content: center;
+        box-shadow: 2px 2px 0 rgba(0,0,0,0.2);
+        transition: transform 0.15s, box-shadow 0.15s;
+        font-family: 'Comic Neue', cursive;
+        flex-shrink: 0;
+      }
+
+      .help-btn:hover {
+        transform: translate(-1px, -1px);
+        box-shadow: 3px 3px 0 rgba(0,0,0,0.2);
+      }
 
       /* ─── Chat container ─── */
       .chat-container {
