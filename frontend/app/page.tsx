@@ -212,8 +212,6 @@ export default function LandingPage() {
       {/* ─── FOOTER ─── */}
       <footer className="footer">
         <span>Pay&apos;n Go — construido por <a href="https://github.com/usainbluntmx" target="_blank" rel="noopener noreferrer">Zero Two Labs</a></span>
-        <span className="footer-sep">·</span>
-        <Link href="/app" className="footer-link">Entrar a la app</Link>
       </footer>
 
       <Styles />

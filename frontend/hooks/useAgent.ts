@@ -457,11 +457,54 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
       }
 
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const raw = e instanceof Error ? e.message : String(e);
+
+      // Traducir errores técnicos a mensajes entendibles
+      let friendly = "";
+
+      if (
+        raw.includes("transfer amount exceeds balance") ||
+        raw.includes("insufficient") ||
+        raw.includes("ERC20: transfer amount") ||
+        raw.includes("AA21") // pimlico: insufficient prefund
+      ) {
+        friendly = "Saldo insuficiente. Necesitas un poco más de fondos para cubrir el monto y la comisión del 0.3%.";
+      } else if (
+        raw.includes("returned no data") ||
+        raw.includes("0x") ||
+        raw.includes("contract")
+      ) {
+        friendly = "No se pudo conectar con la red. Verifica tu conexión e inténtalo de nuevo.";
+      } else if (
+        raw.includes("user rejected") ||
+        raw.includes("rejected")
+      ) {
+        friendly = "Operación cancelada.";
+      } else if (
+        raw.includes("timeout") ||
+        raw.includes("network") ||
+        raw.includes("fetch")
+      ) {
+        friendly = "Error de conexión. Verifica tu internet e inténtalo de nuevo.";
+      } else if (
+        raw.includes("nonce") ||
+        raw.includes("AA25")
+      ) {
+        friendly = "Error de sincronización. Espera unos segundos e inténtalo de nuevo.";
+      } else if (
+        raw.includes("paymaster") ||
+        raw.includes("AA31") ||
+        raw.includes("AA32")
+      ) {
+        friendly = "Error al procesar el pago sin gas. Inténtalo de nuevo en unos momentos.";
+      } else {
+        friendly = "No se pudo completar el pago. Verifica que tienes saldo suficiente e inténtalo de nuevo.";
+      }
+
       addMessage({
         role: "agent",
-        content: `❌ No pude ejecutar el pago: ${msg}`,
-        error: msg,
+        content: `❌ ${friendly}`,
+        error: raw,
       });
     } finally {
       setState(prev => ({ ...prev, executingTx: false }));

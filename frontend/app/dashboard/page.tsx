@@ -77,6 +77,14 @@ function useTour() {
             side: "bottom", align: "center",
           },
         },
+        {
+          element: "#tour-notifications",
+          popover: {
+            title: "🔔 Notificaciones",
+            description: "Activa las notificaciones para saber al instante cuando recibes un pago, incluso con la app cerrada. Solo tócalo una vez y acepta el permiso.",
+            side: "bottom", align: "center",
+          },
+        },
       ],
     });
 
@@ -250,6 +258,7 @@ export default function DashboardPage() {
             {(pushStatus === "idle" || pushStatus === "granted") && (
               <button
                 className={"push-btn" + (pushStatus === "granted" ? " granted" : "")}
+                id="tour-notifications"
                 onClick={pushStatus === "idle" ? subscribePush : undefined}
                 title={pushStatus === "granted" ? "Notificaciones activas" : "Activar notificaciones"}
               >
@@ -286,8 +295,8 @@ export default function DashboardPage() {
           <div className="asset-row">
             <div className="asset-icon usdc-icon">
               <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="16" cy="16" r="16" fill="#2775CA"/>
-                <path d="M20.022 18.124c0-2.124-1.28-2.852-3.84-3.156-1.828-.228-2.192-.684-2.192-1.48 0-.796.556-1.302 1.668-1.302 1 0 1.556.34 1.836 1.184a.49.49 0 00.464.308h1.044a.44.44 0 00.44-.452v-.032a3.14 3.14 0 00-2.84-2.584V9.584a.5.5 0 00-.5-.5h-.988a.5.5 0 00-.5.5v1.02c-1.608.228-2.62 1.28-2.62 2.696 0 2.04 1.252 2.8 3.812 3.1 1.7.204 2.22.588 2.22 1.536 0 .948-.832 1.584-1.972 1.584-1.548 0-2.08-.652-2.248-1.544a.468.468 0 00-.46-.388h-1.108a.44.44 0 00-.44.452v.032c.268 1.648 1.364 2.8 3.016 3.1v1.04a.5.5 0 00.5.5h.988a.5.5 0 00.5-.5v-1.02c1.616-.26 2.66-1.376 2.66-2.868z" fill="white"/>
+                <circle cx="16" cy="16" r="16" fill="#2775CA" />
+                <path d="M20.022 18.124c0-2.124-1.28-2.852-3.84-3.156-1.828-.228-2.192-.684-2.192-1.48 0-.796.556-1.302 1.668-1.302 1 0 1.556.34 1.836 1.184a.49.49 0 00.464.308h1.044a.44.44 0 00.44-.452v-.032a3.14 3.14 0 00-2.84-2.584V9.584a.5.5 0 00-.5-.5h-.988a.5.5 0 00-.5.5v1.02c-1.608.228-2.62 1.28-2.62 2.696 0 2.04 1.252 2.8 3.812 3.1 1.7.204 2.22.588 2.22 1.536 0 .948-.832 1.584-1.972 1.584-1.548 0-2.08-.652-2.248-1.544a.468.468 0 00-.46-.388h-1.108a.44.44 0 00-.44.452v.032c.268 1.648 1.364 2.8 3.016 3.1v1.04a.5.5 0 00.5.5h.988a.5.5 0 00.5-.5v-1.02c1.616-.26 2.66-1.376 2.66-2.868z" fill="white" />
               </svg>
             </div>
             <div className="asset-info">
@@ -300,14 +309,13 @@ export default function DashboardPage() {
               </span>
               <div className="asset-balance-row">
                 <span className="asset-symbol">USDC</span>
-                <button className="refresh-btn-sm" onClick={refreshBalance} title="Actualizar">↻</button>
               </div>
             </div>
           </div>
           <div className="asset-row" style={{ animationDelay: "0.08s" }}>
             <div className="asset-icon mxnb-icon">
               <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                <circle cx="16" cy="16" r="16" fill="#006847"/>
+                <circle cx="16" cy="16" r="16" fill="#006847" />
                 <text x="16" y="21" textAnchor="middle" fill="white" fontSize="13" fontWeight="bold" fontFamily="sans-serif">$</text>
               </svg>
             </div>
@@ -966,6 +974,7 @@ function Styles() {
 
       .asset-amount {
         font-size: 1rem; font-weight: 700; color: #1a1a1a;
+        min-width: 60px; text-align: right;
       }
 
       .asset-symbol { font-size: 0.65rem; color: #666; }
