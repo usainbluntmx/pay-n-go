@@ -124,7 +124,13 @@ export default function DashboardPage() {
   }, [isReady, identity?.smartAccountAddress]);
 
   useEffect(() => {
-    if (isReady && identity) loadTxs();
+    if (isReady && identity) {
+      loadTxs();
+      // Sincronizar contactos desde Redis al cargar
+      syncContactsFromRedis(identity.smartAccountAddress).then((remote) => {
+        if (remote) localStorage.setItem("payngo_contacts", JSON.stringify(remote));
+      });
+    }
   }, [isReady, identity?.smartAccountAddress]);
 
   // Auto-scroll al último mensaje
@@ -341,7 +347,7 @@ export default function DashboardPage() {
 
       {/* ─── CONTACTS DRAWER ─── */}
       {showContacts && (
-        <ContactsDrawer onClose={() => setShowContacts(false)} />
+        <ContactsDrawer onClose={() => setShowContacts(false)} address={identity?.smartAccountAddress} />
       )}
 
       {/* ─── TRANSACTIONS DRAWER ─── */}
@@ -685,15 +691,48 @@ function saveContacts(contacts: Contact[]) {
   localStorage.setItem(CONTACTS_KEY, JSON.stringify(contacts));
 }
 
-function ContactsDrawer({ onClose }: { onClose: () => void }) {
+async function syncContactsFromRedis(address: string): Promise<Contact[] | null> {
+  try {
+    const res = await fetch(`/api/contacts?address=${encodeURIComponent(address)}`);
+    const data = await res.json();
+    if (data.contacts && data.contacts.length > 0) {
+      saveContacts(data.contacts);
+      return data.contacts;
+    }
+    return null;
+  } catch { return null; }
+}
+
+async function pushContactsToRedis(address: string, contacts: Contact[]) {
+  try {
+    await fetch("/api/contacts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address, contacts }),
+    });
+  } catch { /* silencioso */ }
+}
+
+function ContactsDrawer({ onClose, address }: { onClose: () => void; address?: string }) {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [alias, setAlias] = useState("");
   const [handle, setHandle] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
-    setContacts(loadContacts());
-  }, []);
+    const local = loadContacts();
+    setContacts(local);
+
+    // Sincronizar con Redis al abrir
+    if (address) {
+      setSyncing(true);
+      syncContactsFromRedis(address).then((remote) => {
+        if (remote) setContacts(remote);
+        setSyncing(false);
+      });
+    }
+  }, [address]);
 
   const addContact = () => {
     setError(null);
@@ -706,6 +745,7 @@ function ContactsDrawer({ onClose }: { onClose: () => void }) {
     const updated = [...contacts, { alias: cleanAlias, handle: cleanHandle, addedAt: Date.now() }];
     setContacts(updated);
     saveContacts(updated);
+    if (address) pushContactsToRedis(address, updated);
     setAlias("");
     setHandle("");
   };
@@ -714,6 +754,7 @@ function ContactsDrawer({ onClose }: { onClose: () => void }) {
     const updated = contacts.filter(c => c.handle !== h);
     setContacts(updated);
     saveContacts(updated);
+    if (address) pushContactsToRedis(address, updated);
   };
 
   return (
@@ -754,7 +795,9 @@ function ContactsDrawer({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="drawer-list">
-          {contacts.length === 0 ? (
+          {syncing ? (
+            <p className="drawer-empty">Sincronizando contactos...</p>
+          ) : contacts.length === 0 ? (
             <p className="drawer-empty">Aún no tienes contactos guardados.</p>
           ) : (
             contacts.map((c) => (

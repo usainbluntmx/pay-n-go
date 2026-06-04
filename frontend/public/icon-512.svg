@@ -1,0 +1,50 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Fondo hueso con esquinas ligeramente imperfectas -->
+  <rect width="512" height="512" rx="96" ry="92" fill="#f5f0e8"/>
+
+  <!-- Grid sutil estilo papel cuadriculado -->
+  <line x1="0" y1="64" x2="512" y2="64" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+  <line x1="0" y1="128" x2="512" y2="128" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+  <line x1="0" y1="192" x2="512" y2="192" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+  <line x1="0" y1="256" x2="512" y2="256" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+  <line x1="0" y1="320" x2="512" y2="320" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+  <line x1="0" y1="384" x2="512" y2="384" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+  <line x1="0" y1="448" x2="512" y2="448" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+  <line x1="64" y1="0" x2="64" y2="512" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+  <line x1="128" y1="0" x2="128" y2="512" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+  <line x1="192" y1="0" x2="192" y2="512" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+  <line x1="256" y1="0" x2="256" y2="512" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+  <line x1="320" y1="0" x2="320" y2="512" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+  <line x1="384" y1="0" x2="384" y2="512" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+  <line x1="448" y1="0" x2="448" y2="512" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+
+  <!-- Círculo exterior sutil -->
+  <circle cx="256" cy="256" r="188" fill="none" stroke="rgba(0,0,0,0.08)" stroke-width="1.5"/>
+
+  <!-- Círculo principal con borde sketch imperfecto -->
+  <circle cx="256" cy="256" r="164" fill="#fff" stroke="#1a1a1a" stroke-width="6"/>
+
+  <!-- Sombra offset del círculo (sketch style) -->
+  <circle cx="262" cy="262" r="164" fill="none" stroke="rgba(0,0,0,0.12)" stroke-width="3"/>
+
+  <!-- Esquinas estilo sketch (L-brackets) -->
+  <path d="M 30 30 L 70 30" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <path d="M 30 30 L 30 70" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <path d="M 442 30 L 482 30" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <path d="M 482 30 L 482 70" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <path d="M 30 442 L 30 482" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <path d="M 30 482 L 70 482" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <path d="M 482 442 L 482 482" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <path d="M 442 482 L 482 482" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round" fill="none"/>
+
+  <!-- Flecha negra estilo sketch (trazo grueso, no perfecta) -->
+  <path d="M 135 258 L 358 256 L 302 198" fill="none" stroke="#1a1a1a" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 358 256 L 302 314" fill="none" stroke="#1a1a1a" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Punto central estilo sketch -->
+  <circle cx="256" cy="256" r="11" fill="#1a1a1a"/>
+  <circle cx="256" cy="256" r="5" fill="#f5f0e8"/>
+
+  <!-- Sombra offset de la caja completa -->
+  <rect x="8" y="8" width="512" height="512" rx="96" ry="92" fill="none" stroke="rgba(0,0,0,0.08)" stroke-width="2"/>
+</svg>

@@ -15,26 +15,29 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Pay'n Go",
-  description: "Universal stablecoin payments — send USDC without crypto knowledge",
+  description: "Envía y recibe dinero tan fácil y rápido como enviar un mensaje",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    statusBarStyle: "default",
     title: "Pay'n Go",
   },
   icons: {
-    icon: "/icons/icon-192.png",
-    apple: "/icons/icon-192.png",
+    icon: [
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
   },
   openGraph: {
     title: "Pay'n Go",
-    description: "Send USDC as easily as sending a message",
+    description: "Envía y recibe dinero tan fácil y rápido como enviar un mensaje",
     type: "website",
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#00ffaa",
+  themeColor: "#f5f0e8",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -53,9 +56,11 @@ export default function RootLayout({
         <link rel="manifest" href="/manifest.json" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="Pay'n Go" />
-        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <AppKitProvider>
