@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { parseUnits, formatUnits, type Address, type Hash } from "viem";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { parseUnits, formatUnits, createPublicClient, http, type Address, type Hash } from "viem";
+import { sepolia } from "viem/chains";
 import { useIdentity } from "./useIdentity";
 import { useHandle } from "./useHandle";
 
@@ -49,18 +50,60 @@ export interface AgentState {
 }
 
 // ─── Constante de comisión ────────────────────────────────────
-
-const FEE_BPS = 30; // 0.3%
+// FEE_BPS se lee en vivo de PayNGoRouter.sol (ver useLiveFeeBps abajo).
+// Este valor es solo el fallback si esa lectura falla — mantenlo
+// sincronizado manualmente con FEE_BPS en PayNGoRouter.sol por si acaso,
+// pero en operación normal el número real siempre viene del contrato.
+const FALLBACK_FEE_BPS = 30; // 0.3%
 const BPS_BASE = 10_000;
 
-function calculateFee(amount: string): { amountWithFee: string; fee: string } {
+const ROUTER_ADDRESS = "0x52e5d621290F9941254d42F8AB905E3fAB32f6F1" as Address;
+const ROUTER_FEE_ABI = [
+  { type: "function", name: "FEE_BPS", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+] as const;
+
+function calculateFee(amount: string, feeBps: number): { amountWithFee: string; fee: string } {
   const amountFloat = parseFloat(amount);
-  const fee = (amountFloat * FEE_BPS) / BPS_BASE;
+  const fee = (amountFloat * feeBps) / BPS_BASE;
   const amountWithFee = amountFloat + fee;
   return {
     fee: fee.toFixed(4),
     amountWithFee: amountWithFee.toFixed(4),
   };
+}
+
+// ─── Fee en vivo desde el contrato ─────────────────────────────
+// Lee FEE_BPS de PayNGoRouter una sola vez y lo cachea en memoria del
+// módulo — así todas las instancias del hook comparten la misma lectura
+// sin repetir la llamada RPC en cada render/montaje.
+let cachedFeeBps: number | null = null;
+let feeBpsFetchPromise: Promise<number> | null = null;
+
+async function fetchLiveFeeBps(): Promise<number> {
+  if (cachedFeeBps !== null) return cachedFeeBps;
+  if (feeBpsFetchPromise) return feeBpsFetchPromise;
+
+  feeBpsFetchPromise = (async () => {
+    try {
+      const publicClient = createPublicClient({
+        chain: sepolia,
+        transport: http(process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || ""),
+      });
+      const raw = await publicClient.readContract({
+        address: ROUTER_ADDRESS,
+        abi: ROUTER_FEE_ABI,
+        functionName: "FEE_BPS",
+      }) as bigint;
+      cachedFeeBps = Number(raw);
+      return cachedFeeBps;
+    } catch {
+      // RPC caído u otro fallo — usar el fallback y no bloquear al usuario
+      cachedFeeBps = FALLBACK_FEE_BPS;
+      return cachedFeeBps;
+    }
+  })();
+
+  return feeBpsFetchPromise;
 }
 
 // ─── Hook principal ───────────────────────────────────────────
@@ -74,6 +117,16 @@ export function useAgent(saveTx?: (tx: {
 }) => Promise<unknown>) {
   const { identity, balance, mxnbBalance, getSmartAccountClient, getArbSmartAccountClient, refreshBalance, sendPushNotification } = useIdentity();
   const { resolveHandle } = useHandle();
+
+  // Fee real leída de PayNGoRouter.FEE_BPS — arranca en el fallback y se
+  // actualiza en cuanto la lectura on-chain resuelve. Un ref (no state)
+  // porque no necesita disparar un re-render: se lee en el momento de
+  // calcular la fee de un pago, no se muestra directamente en UI.
+  const feeBpsRef = useRef<number>(FALLBACK_FEE_BPS);
+
+  useEffect(() => {
+    fetchLiveFeeBps().then((bps) => { feeBpsRef.current = bps; });
+  }, []);
 
   // ─── Cargar contactos del localStorage ───────────────────────
   const getContacts = useCallback((): Array<{ alias: string; handle: string }> => {
@@ -261,12 +314,14 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
         }
       }
 
-      // Calcular comisión de forma transparente
+      // Calcular comisión de forma transparente — usa el FEE_BPS real
+      // leído de PayNGoRouter, no un número fijo en el cliente.
       if (parsed.action === "send_usdc" && parsed.params.amount) {
-        const { fee, amountWithFee } = calculateFee(parsed.params.amount);
+        const liveFeeBps = feeBpsRef.current;
+        const { fee, amountWithFee } = calculateFee(parsed.params.amount, liveFeeBps);
         parsed.params.fee = fee;
         parsed.params.amountWithFee = amountWithFee;
-        parsed.params.feePercent = "0.3";
+        parsed.params.feePercent = (liveFeeBps / 100).toString();
       }
 
       // Forzar requiresConfirmation en el código — no depender de Claude
@@ -288,7 +343,7 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
         agentMessage += `.\n\n`;
         agentMessage += `📋 **Resumen:**\n`;
         agentMessage += `• El receptor recibirá: **${parsed.params.amount} ${tokenName}**\n`;
-        agentMessage += `• Comisión del servicio (0.3%): **${parsed.params.fee} ${tokenName}**\n`;
+        agentMessage += `• Comisión del servicio (${parsed.params.feePercent}%): **${parsed.params.fee} ${tokenName}**\n`;
         agentMessage += `• **Total que saldrá de tu cuenta: ${parsed.params.amountWithFee} ${tokenName}**\n\n`;
         agentMessage += `¿Confirmas el envío?`;
       } else if (parsed.action === "create_link" && parsed.params.amount) {
