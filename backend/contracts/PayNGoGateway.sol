@@ -86,6 +86,7 @@ contract PayNGoGateway is Ownable, ReentrancyGuard {
     error InvalidPolicy();
     error TransferFailed();
     error TxAlreadyProcessed(bytes32 txId);
+    error UnauthorizedCaller(address caller, address user);
 
     // ─── Constructor ──────────────────────────────────────────────
     constructor(
@@ -118,6 +119,13 @@ contract PayNGoGateway is Ownable, ReentrancyGuard {
         uint256 gasLimit,
         uint256 gasPrice
     ) external nonReentrant returns (bytes32 txId) {
+        // Solo el propio usuario, o el Router de confianza actuando en su nombre,
+        // puede disparar un cobro contra el allowance de `user`. Sin esto,
+        // cualquiera podía pasar la address de una víctima y drenar su USDC.
+        if (msg.sender != user && msg.sender != payNGoRouter) {
+            revert UnauthorizedCaller(msg.sender, user);
+        }
+
         // Validaciones de usuario
         if (blacklistedUsers[user]) revert UserBlacklisted(user);
         if (whitelistOnly && !whitelistedUsers[user]) revert UserNotWhitelisted(user);
@@ -195,6 +203,12 @@ function executeGaslessPayment(
     uint256 amount,
     uint256 gasLimit
 ) external nonReentrant returns (bytes32 txId) {
+    // `user` es el registro lógico para políticas y stats — solo el propio
+    // usuario o el Router de confianza pueden reportar actividad a su nombre.
+    if (msg.sender != user && msg.sender != payNGoRouter) {
+        revert UnauthorizedCaller(msg.sender, user);
+    }
+
     if (blacklistedUsers[user]) revert UserBlacklisted(user);
     if (whitelistOnly && !whitelistedUsers[user] && !whitelistedUsers[msg.sender]) {
         revert UserNotWhitelisted(user);

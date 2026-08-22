@@ -100,21 +100,21 @@ describe("PayNGoGateway", () => {
         it("blacklist bloquea sponsorship", async () => {
             await gateway.setBlacklisted(alice.address, true);
             await expect(
-                gateway.sponsorTransaction(alice.address, 100_000, 1_000_000_000)
+                gateway.connect(alice).sponsorTransaction(alice.address, 100_000, 1_000_000_000)
             ).to.be.revertedWithCustomError(gateway, "UserBlacklisted");
         });
 
         it("whitelistOnly bloquea usuarios no whitelisted", async () => {
             await gateway.setWhitelistOnly(true);
             await expect(
-                gateway.sponsorTransaction(alice.address, 100_000, 1_000_000_000)
+                gateway.connect(alice).sponsorTransaction(alice.address, 100_000, 1_000_000_000)
             ).to.be.revertedWithCustomError(gateway, "UserNotWhitelisted");
         });
 
         it("whitelistOnly permite usuarios whitelisted", async () => {
             await gateway.setWhitelistOnly(true);
             await gateway.setWhitelisted(alice.address, true);
-            const tx = await gateway.sponsorTransaction(alice.address, 100_000, 1_000_000_000);
+            const tx = await gateway.connect(alice).sponsorTransaction(alice.address, 100_000, 1_000_000_000);
             await expect(tx).to.emit(gateway, "GasSponsored");
         });
     });
@@ -123,7 +123,7 @@ describe("PayNGoGateway", () => {
 
     describe("sponsorTransaction", () => {
         it("patrocina tx con política Full correctamente", async () => {
-            const tx = await gateway.sponsorTransaction(alice.address, 100_000, 1_000_000_000);
+            const tx = await gateway.connect(alice).sponsorTransaction(alice.address, 100_000, 1_000_000_000);
             await expect(tx).to.emit(gateway, "GasSponsored");
             const stats = await gateway.getUserStats(alice.address);
             expect(stats.ethSponsored).to.be.gt(0);
@@ -131,21 +131,29 @@ describe("PayNGoGateway", () => {
 
         it("revierte si gas price demasiado alto", async () => {
             await expect(
-                gateway.sponsorTransaction(alice.address, 100_000, ethers.parseUnits("600", "gwei"))
+                gateway.connect(alice).sponsorTransaction(alice.address, 100_000, ethers.parseUnits("600", "gwei"))
             ).to.be.revertedWithCustomError(gateway, "GasPriceTooHigh");
         });
 
         it("revierte si gas limit excede máximo de política", async () => {
             await expect(
-                gateway.sponsorTransaction(alice.address, 400_000, 1_000_000_000)
+                gateway.connect(alice).sponsorTransaction(alice.address, 400_000, 1_000_000_000)
             ).to.be.revertedWithCustomError(gateway, "GasLimitExceeded");
         });
 
         it("revierte si no hay suficiente ETH en gateway", async () => {
             await gateway.withdraw(ONE_ETH, owner.address);
             await expect(
-                gateway.sponsorTransaction(alice.address, 100_000, 1_000_000_000)
+                gateway.connect(alice).sponsorTransaction(alice.address, 100_000, 1_000_000_000)
             ).to.be.revertedWithCustomError(gateway, "InsufficientDeposit");
+        });
+
+        it("revierte si alguien intenta patrocinar en nombre de otro usuario", async () => {
+            // bob NO puede llamar sponsorTransaction pasando la address de alice —
+            // este es exactamente el vector de drenaje que UnauthorizedCaller cierra.
+            await expect(
+                gateway.connect(bob).sponsorTransaction(alice.address, 100_000, 1_000_000_000)
+            ).to.be.revertedWithCustomError(gateway, "UnauthorizedCaller");
         });
     });
 
