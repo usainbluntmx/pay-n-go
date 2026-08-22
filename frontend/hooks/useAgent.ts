@@ -332,6 +332,21 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
         parsed.requiresConfirmation = true;
       }
 
+      // Los links de pago solo existen en PayNGoLinks.sol, desplegado
+      // únicamente en Ethereum Sepolia — no hay equivalente para MXNB.
+      // Si Claude devolvió MXNB para un create_link, es un error de
+      // interpretación; forzamos USDC y avisamos si el usuario pidió
+      // explícitamente pesos.
+      if (parsed.action === "create_link") {
+        if (parsed.params.token === "MXNB") {
+          addMessage({
+            role: "agent",
+            content: "Por ahora los links de pago solo están disponibles en USDC (dólares digitales). Voy a crear el link en USDC.",
+          });
+        }
+        parsed.params.token = "USDC";
+      }
+
       // Construir mensaje de respuesta
       let agentMessage = parsed.reasoning;
 
@@ -504,10 +519,91 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
         });
 
       } else if (suggestion.action === "create_link") {
-        // Por ahora placeholder — implementar en Día 5
+        const { amount, memo } = suggestion.params;
+        if (!amount) throw new Error("Falta el monto del link");
+
+        const PAYNGO_LINKS_ADDRESS = "0x1e6DFDac949089a02e48aBcb63E7381A3D77bF29" as Address;
+        const USDC_ADDR = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as Address;
+
+        const LINKS_ABI = [
+          {
+            type: "function", name: "createLink", stateMutability: "nonpayable",
+            inputs: [
+              { name: "recipient", type: "address" },
+              { name: "token", type: "address" },
+              { name: "amount", type: "uint256" },
+              { name: "expiresIn", type: "uint256" },
+              { name: "memo", type: "string" },
+            ],
+            outputs: [{ name: "id", type: "uint256" }],
+          },
+        ] as const;
+
+        // El link lo cobra quien lo pague después — el creador (este usuario)
+        // es también el recipient por defecto, salvo que se soporte
+        // especificar otro destinatario en el futuro.
+        const amountBigInt = parseUnits(amount, 6);
+        const expiresIn = 0n; // sin expiración por default
+
+        const calls = [
+          {
+            to: PAYNGO_LINKS_ADDRESS,
+            abi: LINKS_ABI,
+            functionName: "createLink",
+            args: [identity.smartAccountAddress as Address, USDC_ADDR, amountBigInt, expiresIn, memo || ""],
+          },
+        ];
+
+        const userOpHash = await (smartAccountClient as never as {
+          sendUserOperation: (params: { calls: unknown[] }) => Promise<Hash>;
+        }).sendUserOperation({ calls });
+
+        const receipt = await (smartAccountClient as never as {
+          waitForUserOperationReceipt: (params: { hash: Hash }) => Promise<{
+            receipt: { transactionHash: Hash };
+            logs: Array<{ topics: readonly `0x${string}`[]; data: `0x${string}` }>;
+          }>;
+        }).waitForUserOperationReceipt({ hash: userOpHash });
+
+        const txHash = receipt.receipt.transactionHash;
+
+        // Leer el linkId real del evento LinkCreated en vez de asumir un
+        // valor — el topic[1] es el id (indexed), decodificado por viem.
+        let linkId: string | null = null;
+        try {
+          const { decodeEventLog } = await import("viem");
+          const LINK_CREATED_EVENT = {
+            type: "event", name: "LinkCreated",
+            inputs: [
+              { name: "id", type: "uint256", indexed: true },
+              { name: "creator", type: "address", indexed: true },
+              { name: "recipient", type: "address", indexed: true },
+              { name: "token", type: "address", indexed: false },
+              { name: "amount", type: "uint256", indexed: false },
+              { name: "expiresAt", type: "uint256", indexed: false },
+              { name: "memo", type: "string", indexed: false },
+            ],
+          } as const;
+
+          for (const log of receipt.logs) {
+            try {
+              const decoded = decodeEventLog({ abi: [LINK_CREATED_EVENT], data: log.data, topics: [...log.topics] as [`0x${string}`, ...`0x${string}`[]] });
+              if (decoded.eventName === "LinkCreated") {
+                linkId = (decoded.args as { id: bigint }).id.toString();
+                break;
+              }
+            } catch { /* no era este evento, seguir */ }
+          }
+        } catch { /* si falla la decodificación, seguimos sin linkId */ }
+
+        const linkUrl = linkId ? `${window.location.origin}/pay/${linkId}` : null;
+
         addMessage({
           role: "agent",
-          content: "La creación de links via agente estará disponible pronto.",
+          content: linkUrl
+            ? `✅ Link de pago creado por **${amount} USDC**${memo ? ` para "${memo}"` : ""}.\n\nCompártelo para que te paguen:\n**${linkUrl}**`
+            : `✅ Link de pago creado por **${amount} USDC**${memo ? ` para "${memo}"` : ""}. Revisa tu historial para verlo.`,
+          txHash,
         });
       }
 
