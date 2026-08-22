@@ -19,10 +19,16 @@ import { entryPoint07Address } from "viem/account-abstraction";
 import { toSafeSmartAccount } from "permissionless/accounts";
 import { createPimlicoClient } from "permissionless/clients/pimlico";
 import { createSmartAccountClient } from "permissionless";
+import {
+  encryptWithPassword,
+  decryptWithPassword,
+  validatePasswordStrength,
+  type EncryptedPayload,
+} from "@/lib/identityCrypto";
 
 // ─── Constantes ───────────────────────────────────────────────
 
-const STORAGE_KEY = "payngo_identity";
+const STORAGE_KEY = "payngo_identity_v2"; // v2: cifrado. La v1 (texto plano) queda huérfana y se ignora.
 const USDC = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as Address;
 const MXNB = "0x82B9e52b26A2954E113F94Ff26647754d5a4247D" as Address;
 const BALANCE_POLL_INTERVAL = 15_000; // 15 segundos
@@ -55,34 +61,27 @@ export interface IdentityState {
   loading: boolean;
   error: string | null;
   step:
-  | "idle"
+  | "idle"        // sin identidad — pantalla de bienvenida
+  | "locked"      // hay identidad cifrada en localStorage, falta password
   | "generating"
   | "creating_account"
   | "ready"
   | "recovering";
 }
 
-// ─── Helpers ──────────────────────────────────────────────────
+// ─── Storage — ahora guarda SOLO el payload cifrado ────────────
 
-function derivePrivateKey(mnemonic: string): Hex {
-  const seed = mnemonicToSeedSync(mnemonic);
-  const root = HDKey.fromMasterSeed(seed);
-  const child = root.derive("m/44'/60'/0'/0/0");
-  if (!child.privateKey) throw new Error("Failed to derive private key");
-  return ("0x" + Buffer.from(child.privateKey).toString("hex")) as Hex;
-}
-
-function saveIdentity(identity: Identity): void {
+function saveEncrypted(payload: EncryptedPayload): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(identity));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
 }
 
-function loadIdentity(): Identity | null {
+function loadEncrypted(): EncryptedPayload | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as Identity;
+    return JSON.parse(raw) as EncryptedPayload;
   } catch {
     return null;
   }
@@ -91,6 +90,16 @@ function loadIdentity(): Identity | null {
 function clearIdentity(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(STORAGE_KEY);
+  // Limpia también cualquier resto de la v1 en texto plano de instalaciones viejas
+  localStorage.removeItem("payngo_identity");
+}
+
+function derivePrivateKey(mnemonic: string): Hex {
+  const seed = mnemonicToSeedSync(mnemonic);
+  const root = HDKey.fromMasterSeed(seed);
+  const child = root.derive("m/44'/60'/0'/0/0");
+  if (!child.privateKey) throw new Error("Failed to derive private key");
+  return ("0x" + Buffer.from(child.privateKey).toString("hex")) as Hex;
 }
 
 // ─── Hook principal ───────────────────────────────────────────
@@ -105,7 +114,10 @@ export function useIdentity() {
     step: "idle",
   });
 
-  // Ref para detectar cambios de balance y disparar notificaciones
+  // La contraseña de esta sesión — SOLO en memoria, nunca en localStorage.
+  // Se usa para re-cifrar cuando algo cambia (ej. setHandle) sin volver a pedirla.
+  const sessionPasswordRef = useRef<string | null>(null);
+
   const prevBalanceRef = useRef<string | null>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -208,7 +220,6 @@ export function useIdentity() {
     pollIntervalRef.current = setInterval(async () => {
       const newBalance = await loadBalance(address);
       const newMxnbBalance = await loadMxnbBalance(address);
-      const prev = prevBalanceRef.current;
 
       setState(s => {
         if (s.identity?.smartAccountAddress !== address) return s;
@@ -217,40 +228,70 @@ export function useIdentity() {
 
       prevBalanceRef.current = newBalance;
     }, BALANCE_POLL_INTERVAL);
-  }, [loadBalance, loadMxnbBalance, sendPushNotification]);
+  }, [loadBalance, loadMxnbBalance]);
 
-  // ─── Cargar identidad al montar ──────────────────────────────
+  // ─── Guardar identidad re-cifrando con la password de sesión ──
+  // Usado por setHandle: la identidad cambió, hay que persistir el
+  // nuevo ciphertext, pero no queremos volver a pedir la contraseña.
+
+  const persistIdentity = useCallback(async (identity: Identity) => {
+    const password = sessionPasswordRef.current;
+    if (!password) return; // no debería pasar si step === "ready", pero por seguridad no truena
+    const payload = await encryptWithPassword(JSON.stringify(identity), password);
+    saveEncrypted(payload);
+  }, []);
+
+  // ─── Detectar identidad cifrada al montar (sin descifrar aún) ─
 
   useEffect(() => {
-    const stored = loadIdentity();
-    if (!stored) {
+    const encrypted = loadEncrypted();
+    if (!encrypted) {
       setState(prev => ({ ...prev, loading: false, step: "idle" }));
       return;
     }
-
-    Promise.all([
-      loadBalance(stored.smartAccountAddress),
-      loadMxnbBalance(stored.smartAccountAddress),
-    ]).then(([balance, mxnbBalance]) => {
-      setState({
-        identity: stored,
-        balance,
-        mxnbBalance,
-        loading: false,
-        error: null,
-        step: "ready",
-      });
-      startPolling(stored.smartAccountAddress, balance);
-    });
+    // Hay una identidad guardada, pero está cifrada — el usuario debe
+    // desbloquearla con su contraseña antes de que exista `identity` en memoria.
+    setState(prev => ({ ...prev, loading: false, step: "locked" }));
 
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
+  }, []);
+
+  // ─── Desbloquear sesión existente con contraseña ──────────────
+
+  const unlock = useCallback(async (password: string): Promise<void> => {
+    const encrypted = loadEncrypted();
+    if (!encrypted) throw new Error("No hay ninguna cuenta guardada en este dispositivo.");
+
+    setState(prev => ({ ...prev, loading: true, error: null }));
+
+    try {
+      const plaintext = await decryptWithPassword(encrypted, password);
+      const identity = JSON.parse(plaintext) as Identity;
+
+      sessionPasswordRef.current = password;
+
+      const [balance, mxnbBalance] = await Promise.all([
+        loadBalance(identity.smartAccountAddress),
+        loadMxnbBalance(identity.smartAccountAddress),
+      ]);
+
+      setState({ identity, balance, mxnbBalance, loading: false, error: null, step: "ready" });
+      startPolling(identity.smartAccountAddress, balance);
+    } catch {
+      // AES-GCM falla la verificación de integridad si la password es incorrecta
+      setState(prev => ({ ...prev, loading: false, error: "Contraseña incorrecta" }));
+      throw new Error("Contraseña incorrecta");
+    }
   }, [loadBalance, loadMxnbBalance, startPolling]);
 
   // ─── Crear nueva identidad ───────────────────────────────────
 
-  const createIdentity = useCallback(async (): Promise<Identity> => {
+  const createIdentity = useCallback(async (password: string): Promise<Identity> => {
+    const pwError = validatePasswordStrength(password);
+    if (pwError) throw new Error(pwError);
+
     setState(prev => ({ ...prev, loading: true, error: null, step: "generating" }));
 
     try {
@@ -270,7 +311,9 @@ export function useIdentity() {
         createdAt: Date.now(),
       };
 
-      saveIdentity(identity);
+      const payload = await encryptWithPassword(JSON.stringify(identity), password);
+      saveEncrypted(payload);
+      sessionPasswordRef.current = password;
 
       const [balance, mxnbBalance] = await Promise.all([
         loadBalance(smartAccountAddress),
@@ -289,11 +332,15 @@ export function useIdentity() {
   }, [createSafeAccount, loadBalance, loadMxnbBalance, startPolling]);
 
   // ─── Recuperar identidad con mnemónico ──────────────────────
+  // También pide una contraseña nueva — es el candado local de ESTE dispositivo,
+  // separado del mnemónico (que es el respaldo real, portable entre dispositivos).
 
-  const recoverIdentity = useCallback(async (mnemonic: string): Promise<Identity> => {
+  const recoverIdentity = useCallback(async (mnemonic: string, password: string): Promise<Identity> => {
     if (!validateMnemonic(mnemonic)) {
       throw new Error("Mnemónico inválido. Verifica las 12 palabras.");
     }
+    const pwError = validatePasswordStrength(password);
+    if (pwError) throw new Error(pwError);
 
     setState(prev => ({ ...prev, loading: true, error: null, step: "recovering" }));
 
@@ -320,7 +367,9 @@ export function useIdentity() {
         createdAt: Date.now(),
       };
 
-      saveIdentity(identity);
+      const payload = await encryptWithPassword(JSON.stringify(identity), password);
+      saveEncrypted(payload);
+      sessionPasswordRef.current = password;
 
       const [balance, mxnbBalance] = await Promise.all([
         loadBalance(smartAccountAddress),
@@ -344,10 +393,10 @@ export function useIdentity() {
     setState(prev => {
       if (!prev.identity) return prev;
       const updated = { ...prev.identity, handle };
-      saveIdentity(updated);
+      persistIdentity(updated); // fire-and-forget — re-cifra con la password de sesión
       return { ...prev, identity: updated };
     });
-  }, []);
+  }, [persistIdentity]);
 
   // ─── Refrescar balance manualmente ───────────────────────────
 
@@ -363,12 +412,34 @@ export function useIdentity() {
   }, [state, loadBalance, loadMxnbBalance]);
 
   // ─── Cerrar sesión ───────────────────────────────────────────
+  // Nota: logout ahora tiene dos sentidos posibles — "olvidar esta cuenta en
+  // este dispositivo" (borra el ciphertext) vs "bloquear la sesión" (solo
+  // limpia la memoria). Mantenemos el comportamiento original: logout = borrar
+  // todo, ya que así funcionaba antes y el usuario siempre puede recuperar
+  // con sus 12 palabras.
 
   const logout = useCallback(() => {
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    sessionPasswordRef.current = null;
     clearIdentity();
     setState({ identity: null, balance: null, mxnbBalance: null, loading: false, error: null, step: "idle" });
     window.location.href = "/";
+  }, []);
+
+  // ─── Bloquear sesión sin borrar la cuenta ─────────────────────
+  // Limpia la identidad de memoria y pide contraseña de nuevo, pero
+  // conserva el ciphertext en localStorage — a diferencia de logout.
+
+  const lock = useCallback(() => {
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    sessionPasswordRef.current = null;
+    setState(prev => ({
+      ...prev,
+      identity: null,
+      balance: null,
+      mxnbBalance: null,
+      step: loadEncrypted() ? "locked" : "idle",
+    }));
   }, []);
 
   // ─── Obtener Smart Account Client ────────────────────────────
@@ -455,6 +526,8 @@ export function useIdentity() {
     ...state,
     createIdentity,
     recoverIdentity,
+    unlock,
+    lock,
     setHandle,
     refreshBalance,
     logout,
@@ -462,6 +535,7 @@ export function useIdentity() {
     getArbSmartAccountClient,
     sendPushNotification,
     isReady: state.step === "ready",
+    isLocked: state.step === "locked",
     hasIdentity: !!state.identity,
   };
 }

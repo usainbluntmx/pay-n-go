@@ -1,17 +1,20 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useIdentity } from "@/hooks/useIdentity";
+import { useState, useEffect } from "react";
+import { useIdentityContext as useIdentity } from "@/context/IdentityProvider";
 import { useHandle } from "@/hooks/useHandle";
 
-type OnboardingStep = "welcome" | "creating" | "backup" | "handle" | "recover";
+type OnboardingStep = "welcome" | "creating" | "backup" | "password" | "handle" | "recover" | "recover_password" | "unlock";
 
 interface OnboardingProps {
   onComplete: () => void;
 }
 
 export function Onboarding({ onComplete }: OnboardingProps) {
-  const { createIdentity, recoverIdentity, setHandle: saveHandle, identity, loading, error, step } = useIdentity();
+  const {
+    createIdentity, recoverIdentity, unlock, setHandle: saveHandle,
+    identity, loading, error, step, isLocked,
+  } = useIdentity();
   const { checkAvailability, registerHandle, loading: handleLoading, available } = useHandle();
 
   const [screen, setScreen] = useState<OnboardingStep>("welcome");
@@ -24,6 +27,22 @@ export function Onboarding({ onComplete }: OnboardingProps) {
 
   const [recoverInput, setRecoverInput] = useState("");
   const [recoverError, setRecoverError] = useState<string | null>(null);
+
+  // Contraseña local del dispositivo — cifra mnemonic/privateKey en localStorage.
+  // Distinta de las 12 palabras: esas son el respaldo real y portable; esta
+  // contraseña solo protege el almacenamiento en ESTE dispositivo.
+  const [password, setPassword] = useState("");
+  const [password2, setPassword2] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+
+  const [unlockPassword, setUnlockPassword] = useState("");
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+
+  // Si ya hay una identidad cifrada guardada en este dispositivo, mostrar
+  // la pantalla de desbloqueo en vez del flujo de bienvenida.
+  useEffect(() => {
+    if (isLocked) setScreen("unlock");
+  }, [isLocked]);
 
   const stepLabel: Record<string, string> = {
     generating: "Generando tus claves...",
@@ -40,14 +59,29 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     return () => clearTimeout(timer);
   }, [handleInput, checkAvailability]);
 
-  const handleCreate = async () => {
+  const handleGoToPassword = () => {
+    setScreen("password");
+  };
+
+  const handleSetPassword = async () => {
+    setPasswordError(null);
+    if (password.length < 8) {
+      setPasswordError("Mínimo 8 caracteres");
+      return;
+    }
+    if (password !== password2) {
+      setPasswordError("Las contraseñas no coinciden");
+      return;
+    }
+
     setScreen("creating");
     try {
-      const id = await createIdentity();
+      const id = await createIdentity(password);
       setMnemonic(id.mnemonic.split(" "));
       setScreen("backup");
-    } catch {
-      setScreen("welcome");
+    } catch (e) {
+      setPasswordError(e instanceof Error ? e.message : "Error al crear la cuenta");
+      setScreen("password");
     }
   };
 
@@ -79,11 +113,25 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     onComplete();
   };
 
+  const handleRecoverContinue = () => {
+    if (recoverInput.trim().split(" ").length < 12) return;
+    setScreen("recover_password");
+  };
+
   const handleRecover = async () => {
     setRecoverError(null);
+    if (password.length < 8) {
+      setRecoverError("Mínimo 8 caracteres");
+      return;
+    }
+    if (password !== password2) {
+      setRecoverError("Las contraseñas no coinciden");
+      return;
+    }
+
     const words = recoverInput.trim().toLowerCase();
     try {
-      const recovered = await recoverIdentity(words);
+      const recovered = await recoverIdentity(words, password);
       // Si ya tenía handle, ir directo al dashboard
       if (recovered.handle) {
         onComplete();
@@ -92,6 +140,16 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       }
     } catch (e) {
       setRecoverError(e instanceof Error ? e.message : "Error al recuperar");
+    }
+  };
+
+  const handleUnlock = async () => {
+    setUnlockError(null);
+    try {
+      await unlock(unlockPassword);
+      onComplete();
+    } catch (e) {
+      setUnlockError(e instanceof Error ? e.message : "Contraseña incorrecta");
     }
   };
 
@@ -120,11 +178,55 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             Sin wallet. Sin crypto. Sin complicaciones.
             Solo tú y tu dinero.
           </p>
-          <button className="ob-btn-primary" onClick={handleCreate} disabled={loading}>
+          <button className="ob-btn-primary" onClick={handleGoToPassword} disabled={loading}>
             Crear mi cuenta →
           </button>
           <button className="ob-btn-ghost" onClick={() => setScreen("recover")}>
             Ya tengo cuenta — Recuperar
+          </button>
+        </div>
+      )}
+
+      {/* ─── PASSWORD (crear) ─── */}
+      {screen === "password" && (
+        <div className="ob-card">
+          <h2 className="ob-title">Crea una contraseña</h2>
+          <p className="ob-desc">
+            Protege tu cuenta en este dispositivo. La necesitarás cada vez
+            que abras Pay&apos;n Go aquí — es distinta de tus 12 palabras de
+            recuperación, que siguen siendo tu respaldo real.
+          </p>
+          <div className="field">
+            <input
+              type="password"
+              className="ob-textarea"
+              style={{ resize: "none" }}
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setPasswordError(null); }}
+              placeholder="Contraseña (mínimo 8 caracteres)"
+              autoFocus
+            />
+          </div>
+          <div className="field">
+            <input
+              type="password"
+              className="ob-textarea"
+              style={{ resize: "none" }}
+              value={password2}
+              onChange={(e) => { setPassword2(e.target.value); setPasswordError(null); }}
+              placeholder="Confirma tu contraseña"
+            />
+          </div>
+          {passwordError && <p className="ob-error">{passwordError}</p>}
+          <button
+            className="ob-btn-primary"
+            onClick={handleSetPassword}
+            disabled={loading || !password || !password2}
+          >
+            Continuar →
+          </button>
+          <button className="ob-btn-ghost" onClick={() => { setScreen("welcome"); setPassword(""); setPassword2(""); setPasswordError(null); }}>
+            ← Volver
           </button>
         </div>
       )}
@@ -259,13 +361,93 @@ export function Onboarding({ onComplete }: OnboardingProps) {
           {recoverError && <p className="ob-error">{recoverError}</p>}
           <button
             className="ob-btn-primary"
-            onClick={handleRecover}
+            onClick={handleRecoverContinue}
             disabled={loading || recoverInput.trim().split(" ").length < 12}
           >
-            {loading ? (stepLabel[step] || "Recuperando...") : "Recuperar cuenta →"}
+            Continuar →
           </button>
           <button className="ob-btn-ghost" onClick={() => setScreen("welcome")}>
             ← Volver
+          </button>
+        </div>
+      )}
+
+      {/* ─── RECOVER PASSWORD ─── */}
+      {screen === "recover_password" && (
+        <div className="ob-card">
+          <h2 className="ob-title">Crea una contraseña</h2>
+          <p className="ob-desc">
+            Protege tu cuenta en este dispositivo. La necesitarás cada vez
+            que abras Pay&apos;n Go aquí.
+          </p>
+          <div className="field">
+            <input
+              type="password"
+              className="ob-textarea"
+              style={{ resize: "none" }}
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setRecoverError(null); }}
+              placeholder="Contraseña (mínimo 8 caracteres)"
+              autoFocus
+            />
+          </div>
+          <div className="field">
+            <input
+              type="password"
+              className="ob-textarea"
+              style={{ resize: "none" }}
+              value={password2}
+              onChange={(e) => { setPassword2(e.target.value); setRecoverError(null); }}
+              placeholder="Confirma tu contraseña"
+            />
+          </div>
+          {recoverError && <p className="ob-error">{recoverError}</p>}
+          <button
+            className="ob-btn-primary"
+            onClick={handleRecover}
+            disabled={loading || !password || !password2}
+          >
+            {loading ? (stepLabel[step] || "Recuperando...") : "Recuperar cuenta →"}
+          </button>
+          <button className="ob-btn-ghost" onClick={() => setScreen("recover")}>
+            ← Volver
+          </button>
+        </div>
+      )}
+
+      {/* ─── UNLOCK (sesión existente en este dispositivo) ─── */}
+      {screen === "unlock" && (
+        <div className="ob-card">
+          <div className="ob-logo">
+            PAY<span className="accent">&apos;N</span>GO
+          </div>
+          <h2 className="ob-title">Ingresa tu contraseña</h2>
+          <p className="ob-desc">
+            Ya tienes una cuenta en este dispositivo. Ingresa tu contraseña
+            para continuar.
+          </p>
+          <div className="field">
+            <input
+              type="password"
+              className="ob-textarea"
+              style={{ resize: "none" }}
+              value={unlockPassword}
+              onChange={(e) => { setUnlockPassword(e.target.value); setUnlockError(null); }}
+              placeholder="Contraseña"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter") handleUnlock(); }}
+            />
+          </div>
+          {unlockError && <p className="ob-error">{unlockError}</p>}
+          <button
+            className="ob-btn-primary"
+            onClick={handleUnlock}
+            disabled={loading || !unlockPassword}
+          >
+            {loading ? "Desbloqueando..." : "Entrar →"}
+          </button>
+          <button className="ob-btn-ghost" onClick={() => setScreen("recover")}>
+            ¿Olvidaste tu contraseña? Recuperar con 12 palabras
           </button>
         </div>
       )}

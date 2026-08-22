@@ -2,7 +2,8 @@
 
 import "driver.js/dist/driver.css";
 import { useState, useEffect, useRef } from "react";
-import { useIdentity } from "@/hooks/useIdentity";
+import { useRouter } from "next/navigation";
+import { useIdentityContext as useIdentity } from "@/context/IdentityProvider";
 import { useAgent, AgentMessage } from "@/hooks/useAgent";
 import { useHandle } from "@/hooks/useHandle";
 import { usePush } from "@/hooks/usePush";
@@ -95,7 +96,15 @@ function useTour() {
 }
 
 export default function DashboardPage() {
-  const { identity, balance, mxnbBalance, refreshBalance, logout, setHandle, isReady } = useIdentity();
+  const { identity, balance, mxnbBalance, refreshBalance, logout, setHandle, isReady, isLocked } = useIdentity();
+  const router = useRouter();
+
+  // Si la identidad está cifrada en localStorage pero aún no se ha
+  // desbloqueado en esta sesión (ej. tras un F5), no hay nada que mostrar
+  // aquí — mandamos al usuario a /app, que sí sabe pedir la contraseña.
+  useEffect(() => {
+    if (isLocked) router.push("/app");
+  }, [isLocked, router]);
   const { txs, loadTxs, saveTx } = useTransactions(identity?.smartAccountAddress);
   const {
     messages,
