@@ -52,7 +52,7 @@ Pay'n Go es una app de pagos en stablecoins construida para el **ETH Mexico Hack
 |---|---|
 | PayNGoLinks | [`0x1e6DFDac949089a02e48aBcb63E7381A3D77bF29`](https://sepolia.etherscan.io/address/0x1e6DFDac949089a02e48aBcb63E7381A3D77bF29#code) |
 | PayNGoRouter | [`0x52e5d621290F9941254d42F8AB905E3fAB32f6F1`](https://sepolia.etherscan.io/address/0x52e5d621290F9941254d42F8AB905E3fAB32f6F1#code) |
-| PayNGoGateway | [`0x4a0D7CfF4C09f656c352aa190645a96Bca25410D`](https://sepolia.etherscan.io/address/0x4a0D7CfF4C09f656c352aa190645a96Bca25410D#code) |
+| PayNGoGateway | [`0x27Ff5c9F7F09b0bEC212F1dB21eCab6abDbaed80`](https://sepolia.etherscan.io/address/0x27Ff5c9F7F09b0bEC212F1dB21eCab6abDbaed80#code) |
 | USDC Sepolia | [`0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`](https://sepolia.etherscan.io/address/0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238) |
 
 ### Arbitrum Sepolia (MXNB)
