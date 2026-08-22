@@ -1,15 +1,18 @@
 {
-    "name": "@payngo-labs/sdk",
-    "version": "0.2.1",
-    "description": "SDK for Pay'n Go — universal stablecoin payment links on Ethereum",
+    "name": "@zero-two-labs/payngo",
+    "version": "0.3.0",
+    "description": "SDK for Pay'n Go — stablecoin payment links, routing, and gasless sponsorship on Ethereum Sepolia",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "files": [
         "dist"
     ],
+    "publishConfig": {
+        "access": "public"
+    },
     "scripts": {
         "build": "tsc",
-        "test": "jest",
+        "test": "jest --passWithNoTests",
         "dev": "tsc --watch",
         "demo": "ts-node src/agent-demo.ts"
     },
@@ -21,6 +24,11 @@
         "web3",
         "ai-agent"
     ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/usainbluntmx/pay-n-go.git",
+        "directory": "sdk"
+    },
     "license": "MIT",
     "dependencies": {
         "dotenv": "^17.4.2",

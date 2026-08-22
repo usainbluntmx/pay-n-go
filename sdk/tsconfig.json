@@ -23,6 +23,7 @@
     "exclude": [
         "node_modules",
         "dist",
-        "test"
+        "test",
+        "src/agent-demo.ts"
     ]
 }

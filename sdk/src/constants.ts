@@ -5,16 +5,36 @@ import { ContractAddresses } from "./types";
 export const CHAIN_IDS = {
     ETHEREUM_MAINNET: 1,
     ETHEREUM_SEPOLIA: 11155111,
+    ARBITRUM_SEPOLIA: 421614,
     HARDHAT: 31337,
 } as const;
 
 // ─── Contract Addresses ───────────────────────────────────────────
+// Solo chains con el stack PayNGo completo desplegado (Links + Router +
+// Gateway + token). Para chains donde solo existe el token — ej. MXNB en
+// Arbitrum Sepolia, que se mueve por transfer directo + Pimlico paymaster
+// ERC-4337, sin pasar por ningún contrato PayNGo — ver TOKEN_ADDRESSES abajo.
 export const CONTRACT_ADDRESSES: Record<number, ContractAddresses> = {
     [CHAIN_IDS.ETHEREUM_SEPOLIA]: {
         payNGoLinks: "0x1e6DFDac949089a02e48aBcb63E7381A3D77bF29",
         payNGoRouter: "0x52e5d621290F9941254d42F8AB905E3fAB32f6F1",
-        payNGoGateway: "0x4a0D7CfF4C09f656c352aa190645a96Bca25410D",
+        // Redeployado tras el fix de seguridad en sponsorTransaction/
+        // executeGaslessPayment — ver PayNGoGateway.sol. La address vieja
+        // (0x4a0D7CfF...) quedó huérfana, no la uses.
+        payNGoGateway: "0x27Ff5c9F7F09b0bEC212F1dB21eCab6abDbaed80",
         usdc: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+    },
+};
+
+// ─── Token Addresses (sin stack PayNGo desplegado) ────────────────
+// Para chains/tokens que Pay'n Go soporta en producto pero donde no hay
+// PayNGoLinks/Router/Gateway — el frontend mueve estos tokens con
+// transfer() directo + Pimlico paymaster (ERC-4337), no vía estos
+// contratos. Útil para construir integraciones que solo necesitan
+// conocer la dirección del token, no el stack de pagos completo.
+export const TOKEN_ADDRESSES: Record<number, Record<string, Address>> = {
+    [CHAIN_IDS.ARBITRUM_SEPOLIA]: {
+        mxnb: "0x82B9e52b26A2954E113F94Ff26647754d5a4247D",
     },
 };
 

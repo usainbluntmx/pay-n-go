@@ -38,6 +38,7 @@ export {
 // Constantes
 export {
     CONTRACT_ADDRESSES,
+    TOKEN_ADDRESSES,
     CHAIN_IDS,
     PAYNGO_LINKS_ABI,
     PAYNGO_ROUTER_ABI,
@@ -47,6 +48,7 @@ export {
 // Errores
 export { PayNGoError, ERRORS } from "./errors";
 
-// Gasless module
-export { GaslessModule } from "./gasless";
-export type { GaslessConfig, GaslessTransferParams, GaslessTransferResult } from "./gasless";
+// Nota: el gasless sponsorship vive en GatewayModule (client.gateway.*),
+// no como módulo separado. GaslessModule nunca se implementó y se
+// exportaba roto desde aquí — eliminado. Ver gateway.ts para
+// executeGaslessPayment, getPolicyFor, estimateGasCost, etc.
