@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
+import { verifyMessage } from "viem";
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL!,
@@ -16,6 +17,17 @@ function validateHandle(handle: string): string | null {
   return null;
 }
 
+// Mensaje canónico que el owner (EOA) debe firmar para probar que controla
+// la Safe Account a la que se apunta el handle. Se firma con la EOA porque
+// las Safe Accounts no pueden hacer personal_sign directo (requerirían
+// verificación EIP-1271 on-chain) — el mismo patrón que ya usa PayNGoGateway,
+// donde el owner firma y la Safe es solo el destino de fondos.
+function buildRegisterMessage(handle: string, smartAccountAddress: string, timestamp: number): string {
+  return `payngo:register-handle\nhandle: ${handle}\nsmartAccount: ${smartAccountAddress.toLowerCase()}\ntimestamp: ${timestamp}`;
+}
+
+const SIGNATURE_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutos
+
 // GET /api/handles?handle=richi
 // GET /api/handles?address=0x123...
 export async function GET(req: NextRequest) {
@@ -25,7 +37,6 @@ export async function GET(req: NextRequest) {
 
   try {
     if (handle) {
-      // Buscar address por handle
       const addr = await redis.get(`handle:${handle.toLowerCase()}`);
       if (!addr) {
         return NextResponse.json({ available: true });
@@ -34,25 +45,37 @@ export async function GET(req: NextRequest) {
     }
 
     if (address) {
-      // Buscar handle por address
       const h = await redis.get(`address:${address.toLowerCase()}`);
       return NextResponse.json({ handle: h || null });
     }
 
     return NextResponse.json({ error: "Parámetro requerido: handle o address" }, { status: 400 });
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: "Error interno" }, { status: 500 });
   }
 }
 
 // POST /api/handles
-// Body: { handle, address }
+// Body: { handle, address, ownerAddress, signature, timestamp }
+// `address` = Safe Smart Account (destino final de los pagos, se guarda en Redis)
+// `ownerAddress` = EOA derivada del mnemónico, la que realmente firma
+// `signature` debe ser la firma (personal_sign / EIP-191) de `ownerAddress`
+// sobre el mensaje canónico. Sin ella, no se registra.
 export async function POST(req: NextRequest) {
   try {
-    const { handle, address } = await req.json();
+    const { handle, address, ownerAddress, signature, timestamp } = await req.json();
 
     if (!address) {
       return NextResponse.json({ error: "Address requerida" }, { status: 400 });
+    }
+    if (!ownerAddress) {
+      return NextResponse.json({ error: "ownerAddress requerida" }, { status: 400 });
+    }
+    if (!signature || typeof signature !== "string") {
+      return NextResponse.json({ error: "Firma requerida" }, { status: 400 });
+    }
+    if (!timestamp || typeof timestamp !== "number") {
+      return NextResponse.json({ error: "Timestamp requerido" }, { status: 400 });
     }
 
     const normalHandle = handle?.toLowerCase().trim();
@@ -60,6 +83,28 @@ export async function POST(req: NextRequest) {
     const validationError = validateHandle(normalHandle);
     if (validationError) {
       return NextResponse.json({ error: validationError }, { status: 400 });
+    }
+
+    // Ventana de validez — evita reutilizar una firma capturada hace tiempo
+    if (Math.abs(Date.now() - timestamp) > SIGNATURE_MAX_AGE_MS) {
+      return NextResponse.json({ error: "Firma expirada, intenta de nuevo" }, { status: 401 });
+    }
+
+    // Verificar que quien firma es el owner de la Safe Account `address`
+    const message = buildRegisterMessage(normalHandle, address, timestamp);
+    let isValidSignature = false;
+    try {
+      isValidSignature = await verifyMessage({
+        address: ownerAddress as `0x${string}`,
+        message,
+        signature: signature as `0x${string}`,
+      });
+    } catch {
+      isValidSignature = false;
+    }
+
+    if (!isValidSignature) {
+      return NextResponse.json({ error: "Firma inválida — no controlas esta cuenta" }, { status: 401 });
     }
 
     // Verificar que no esté tomado
@@ -80,21 +125,49 @@ export async function POST(req: NextRequest) {
     await redis.set(`address:${normalAddress}`, normalHandle);
 
     return NextResponse.json({ success: true, handle: normalHandle, address });
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: "Error interno" }, { status: 500 });
   }
 }
 
 // DELETE /api/handles
-// Body: { address }
+// Body: { address, ownerAddress, signature, timestamp }
+// También requiere firma del owner — sin esto, cualquiera podía liberar el handle de otro usuario.
 export async function DELETE(req: NextRequest) {
   try {
-    const { address } = await req.json();
+    const { address, ownerAddress, signature, timestamp } = await req.json();
     if (!address) {
       return NextResponse.json({ error: "Address requerida" }, { status: 400 });
     }
+    if (!ownerAddress) {
+      return NextResponse.json({ error: "ownerAddress requerida" }, { status: 400 });
+    }
+    if (!signature || typeof signature !== "string" || !timestamp) {
+      return NextResponse.json({ error: "Firma requerida" }, { status: 400 });
+    }
+
+    if (Math.abs(Date.now() - timestamp) > SIGNATURE_MAX_AGE_MS) {
+      return NextResponse.json({ error: "Firma expirada, intenta de nuevo" }, { status: 401 });
+    }
 
     const normalAddress = address.toLowerCase();
+    const message = `payngo:unregister-handle\nsmartAccount: ${normalAddress}\ntimestamp: ${timestamp}`;
+
+    let isValidSignature = false;
+    try {
+      isValidSignature = await verifyMessage({
+        address: ownerAddress as `0x${string}`,
+        message,
+        signature: signature as `0x${string}`,
+      });
+    } catch {
+      isValidSignature = false;
+    }
+
+    if (!isValidSignature) {
+      return NextResponse.json({ error: "Firma inválida — no controlas esta cuenta" }, { status: 401 });
+    }
+
     const handle = await redis.get(`address:${normalAddress}`) as string | null;
 
     if (handle) {
@@ -103,7 +176,7 @@ export async function DELETE(req: NextRequest) {
     await redis.del(`address:${normalAddress}`);
 
     return NextResponse.json({ success: true });
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: "Error interno" }, { status: 500 });
   }
 }

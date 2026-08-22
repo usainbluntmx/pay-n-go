@@ -65,7 +65,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       return;
     }
 
-    const ok = await registerHandle(handleInput, identity.smartAccountAddress);
+    const ok = await registerHandle(handleInput, identity.smartAccountAddress, identity.privateKey);
     if (!ok) {
       setHandleError("No se pudo registrar el handle");
       return;

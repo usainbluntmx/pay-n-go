@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { privateKeyToAccount } from "viem/accounts";
+import type { Hex } from "viem";
 
 export interface HandleState {
   loading: boolean;
@@ -32,17 +34,34 @@ export function useHandle() {
   }, []);
 
   // ─── Registrar handle ────────────────────────────────────────
+  // `address` = Safe Smart Account (destino de los pagos, se guarda en Redis)
+  // `privateKey` = la del owner (EOA), usada para firmar la prueba de propiedad.
+  // El backend verifica esa firma antes de escribir — ver /api/handles.
 
   const registerHandle = useCallback(async (
     handle: string,
-    address: string
+    address: string,
+    privateKey: Hex
   ): Promise<boolean> => {
     setState(prev => ({ ...prev, loading: true, error: null }));
     try {
+      const normalHandle = handle.toLowerCase().trim();
+      const timestamp = Date.now();
+      const message = `payngo:register-handle\nhandle: ${normalHandle}\nsmartAccount: ${address.toLowerCase()}\ntimestamp: ${timestamp}`;
+
+      const owner = privateKeyToAccount(privateKey);
+      const signature = await owner.signMessage({ message });
+
       const res = await fetch("/api/handles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ handle: handle.toLowerCase().trim(), address }),
+        body: JSON.stringify({
+          handle: normalHandle,
+          address,
+          ownerAddress: owner.address,
+          signature,
+          timestamp,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {

@@ -558,7 +558,7 @@ function MessageBubble({ message }: { message: AgentMessage }) {
 // ─── Handle Modal ─────────────────────────────────────────────
 
 function HandleModal({ identity, onComplete, onClose }: {
-  identity: { smartAccountAddress: string };
+  identity: { smartAccountAddress: string; privateKey: `0x${string}` };
   onComplete: (handle: string) => void;
   onClose: () => void;
 }) {
@@ -581,7 +581,7 @@ function HandleModal({ identity, onComplete, onClose }: {
   const submit = async () => {
     if (!handleInput || handleStatus !== "available") return;
     setError(null);
-    const ok = await registerHandle(handleInput, identity.smartAccountAddress);
+    const ok = await registerHandle(handleInput, identity.smartAccountAddress, identity.privateKey);
     if (!ok) { setError("No se pudo registrar. Intenta de nuevo."); return; }
     onComplete(handleInput.toLowerCase());
   };
@@ -1668,4 +1668,3 @@ function Styles() {
     `}</style>
   );
 }
-
