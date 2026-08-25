@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { parseUnits, formatUnits, createPublicClient, http, type Address, type Hash } from "viem";
 import { sepolia } from "viem/chains";
-import { useIdentity } from "./useIdentity";
+import { useIdentityContext as useIdentity } from "@/context/IdentityProvider";
 import { useHandle } from "./useHandle";
 
 // ─── Tipos ────────────────────────────────────────────────────
