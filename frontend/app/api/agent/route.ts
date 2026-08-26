@@ -8,18 +8,23 @@ const redis = new Redis({
 
 // ─── Configuración ────────────────────────────────────────────
 
-// Dominios desde los que se permite llamar este endpoint
+// Dominios de producción permitidos para llamar este endpoint.
+// El desarrollo local (cualquier puerto de localhost/127.0.0.1) se
+// maneja aparte en isAllowedOrigin() y nunca se activa en producción.
 const ALLOWED_ORIGINS = [
   "https://pay-n-go-weld.vercel.app",
-  "http://localhost:3000",
 ];
 
 // Rate limit: máximo N requests por IP cada ventana de tiempo
 const RATE_LIMIT_MAX = 20;
 const RATE_LIMIT_WINDOW_SECONDS = 60;
 
-// Único modelo permitido — nunca confiar en el modelo que mande el cliente
-const ALLOWED_MODEL = "claude-sonnet-4-20250514";
+// Único modelo permitido — nunca confiar en el modelo que mande el cliente.
+// claude-sonnet-4-20250514 fue descontinuado por Anthropic (devolvía 404
+// "not_found_error" en /v1/messages, no un 404 de ruta). Actualizado a un
+// snapshot con fecha fija — evita romperse otra vez si Anthropic libera
+// nuevas versiones bajo un alias que sí se mueve solo.
+const ALLOWED_MODEL = "claude-sonnet-4-5-20250929";
 const MAX_TOKENS_CAP = 1024;
 
 // ─── Helpers ──────────────────────────────────────────────────
@@ -36,6 +41,17 @@ function isAllowedOrigin(req: NextRequest): boolean {
 
   // Same-origin requests desde el propio servidor (SSR) no mandan origin — permitir
   if (!origin && !referer) return true;
+
+  // En desarrollo local, Next.js puede elegir cualquier puerto libre
+  // (3000, 3001, ...) si el 3000 está ocupado por otro proceso — aceptar
+  // cualquier localhost/127.0.0.1 evita tener que perseguir el puerto
+  // exacto cada vez. Esto NUNCA se activa en producción (NODE_ENV
+  // "production" en Vercel), donde ALLOWED_ORIGINS sigue siendo estricto.
+  if (process.env.NODE_ENV !== "production") {
+    const isLocalOrigin = (value: string | null) =>
+      !!value && /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(value);
+    if (isLocalOrigin(origin) || isLocalOrigin(referer)) return true;
+  }
 
   if (origin && ALLOWED_ORIGINS.some((allowed) => origin === allowed)) return true;
   if (referer && ALLOWED_ORIGINS.some((allowed) => referer.startsWith(allowed))) return true;

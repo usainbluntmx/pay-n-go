@@ -13,12 +13,13 @@ webpush.setVapidDetails(
   process.env.VAPID_PRIVATE_KEY!
 );
 
-// Mismo set de orígenes permitidos que /api/agent — este endpoint dispara
-// notificaciones reales a usuarios reales, así que solo tu propio frontend
-// puede llamarlo.
+// Dominios de producción permitidos para llamar este endpoint. Este
+// endpoint dispara notificaciones reales a usuarios reales, así que solo
+// tu propio frontend puede llamarlo. El desarrollo local (cualquier puerto
+// de localhost/127.0.0.1) se maneja aparte en isAllowedOrigin() y nunca
+// se activa en producción.
 const ALLOWED_ORIGINS = [
   "https://pay-n-go-weld.vercel.app",
-  "http://localhost:3000",
 ];
 
 function isAllowedOrigin(req: NextRequest): boolean {
@@ -28,6 +29,15 @@ function isAllowedOrigin(req: NextRequest): boolean {
   // Same-origin requests desde el propio servidor (SSR / route-to-route) no
   // mandan origin — permitir. Ver /api/agent para el mismo razonamiento.
   if (!origin && !referer) return true;
+
+  // En desarrollo local, Next.js puede elegir cualquier puerto libre si el
+  // 3000 está ocupado — aceptar cualquier localhost/127.0.0.1 evita tener
+  // que perseguir el puerto exacto. Nunca se activa en producción.
+  if (process.env.NODE_ENV !== "production") {
+    const isLocalOrigin = (value: string | null) =>
+      !!value && /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(value);
+    if (isLocalOrigin(origin) || isLocalOrigin(referer)) return true;
+  }
 
   if (origin && ALLOWED_ORIGINS.some((allowed) => origin === allowed)) return true;
   if (referer && ALLOWED_ORIGINS.some((allowed) => referer.startsWith(allowed))) return true;
