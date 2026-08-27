@@ -173,7 +173,7 @@ export default function DocsPage() {
                   <span className="step-num">01</span>
                   <div className="step-body">
                     <h3>Install the SDK</h3>
-                    <Code>{"npm install @payngo-labs/sdk viem"}</Code>
+                    <Code>{"npm install @zero-two-labs/payngo viem"}</Code>
                   </div>
                 </div>
 
@@ -181,7 +181,7 @@ export default function DocsPage() {
                   <span className="step-num">02</span>
                   <div className="step-body">
                     <h3>Initialize the client</h3>
-                    <Code>{`import { PayNGoClient } from "@payngo-labs/sdk";
+                    <Code>{`import { PayNGoClient } from "@zero-two-labs/payngo";
 import { createPublicClient, createWalletClient, http } from "viem";
 import { sepolia } from "viem/chains";
 
@@ -239,7 +239,7 @@ console.log("Tx hash:", result.txHash);`}</Code>
                   <span className="step-num">05</span>
                   <div className="step-body">
                     <h3>Use the AI agent</h3>
-                    <Code>{`import { PayNGoAgent } from "@payngo-labs/sdk";
+                    <Code>{`import { PayNGoAgent } from "@zero-two-labs/payngo";
 
 const agent = new PayNGoAgent({
   client,
@@ -586,7 +586,7 @@ console.log("Gasless available:", isAvailable);`}
                   { name: "autoExecute", type: "boolean?", desc: "Auto-execute if risk is low. Default: false" },
                 ]}
                 returns="Promise<AgentResult>"
-                example={`import { PayNGoAgent } from "@payngo-labs/sdk";
+                example={`import { PayNGoAgent } from "@zero-two-labs/payngo";
 
 const agent = new PayNGoAgent({
   client,
@@ -688,7 +688,7 @@ export async function POST(req: NextRequest) {
 
               <div className="note-box" style={{ marginTop: "2rem" }}>
                 <p className="note-title">Using contract addresses in the SDK</p>
-                <Code>{`import { CONTRACT_ADDRESSES, CHAIN_IDS } from "@payngo-labs/sdk";
+                <Code>{`import { CONTRACT_ADDRESSES, CHAIN_IDS } from "@zero-two-labs/payngo";
 
 const addresses = CONTRACT_ADDRESSES[CHAIN_IDS.ETHEREUM_SEPOLIA];
 
@@ -711,7 +711,7 @@ console.log(addresses.usdc);
   PAYNGO_LINKS_ABI,
   PAYNGO_ROUTER_ABI,
   PAYNGO_GATEWAY_ABI,
-} from "@payngo-labs/sdk";
+} from "@zero-two-labs/payngo";
 
 // Use with viem directly
 const result = await publicClient.readContract({

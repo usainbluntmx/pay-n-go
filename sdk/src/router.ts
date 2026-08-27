@@ -1,4 +1,4 @@
-import { PublicClient, WalletClient, Address, zeroHash, maxUint256 } from "viem";
+import { PublicClient, WalletClient, Address, Account, Chain, zeroHash, maxUint256 } from "viem";
 import { PAYNGO_ROUTER_ABI, ERC20_ABI } from "./constants";
 import {
     RouteQuote,
@@ -12,7 +12,8 @@ export class RouterModule {
         private publicClient: PublicClient,
         private walletClient: WalletClient | undefined,
         private routerAddress: Address,
-        private usdcAddress: Address
+        private usdcAddress: Address,
+        private chain: Chain
     ) { }
 
     // ─── Read ──────────────────────────────────────────────────────
@@ -88,7 +89,7 @@ export class RouterModule {
             abi: PAYNGO_ROUTER_ABI,
             functionName: "executePayment",
             args: [{
-                sender: account,
+                sender: account.address,
                 recipient: params.recipient,
                 tokenIn,
                 tokenOut,
@@ -99,7 +100,7 @@ export class RouterModule {
                 orderId: zeroHash,
             }],
             account,
-            chain: null,
+            chain: this.chain,
         });
 
         const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
@@ -124,14 +125,17 @@ export class RouterModule {
         }
     }
 
-    private _getAccount(): Address {
-        const account = this.walletClient?.account?.address;
+    // Ver comentario detallado en links.ts — devolver el Account completo
+    // (no solo la address) es lo que hace que viem firme localmente en vez
+    // de pedirle al RPC que firme con eth_sendTransaction. Fix: v0.3.2.
+    private _getAccount(): Account {
+        const account = this.walletClient?.account;
         if (!account) throw new PayNGoError("No account connected", ERRORS.NO_ACCOUNT);
         return account;
     }
 
     private async _ensureAllowance(
-        owner: Address,
+        owner: Account,
         token: Address,
         spender: Address,
         amount: bigint
@@ -140,7 +144,7 @@ export class RouterModule {
             address: token,
             abi: ERC20_ABI,
             functionName: "allowance",
-            args: [owner, spender],
+            args: [owner.address, spender],
         }) as bigint;
 
         if (allowance < amount) {
@@ -150,7 +154,7 @@ export class RouterModule {
                 functionName: "approve",
                 args: [spender, maxUint256],
                 account: owner,
-                chain: null,
+                chain: this.chain,
             });
             await this.publicClient.waitForTransactionReceipt({ hash });
         }
@@ -176,7 +180,7 @@ export class RouterModule {
             functionName: "setGaslessThreshold",
             args: [threshold],
             account,
-            chain: null,
+            chain: this.chain,
         });
 
         await this.publicClient.waitForTransactionReceipt({ hash });

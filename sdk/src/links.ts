@@ -2,6 +2,8 @@ import {
     PublicClient,
     WalletClient,
     Address,
+    Account,
+    Chain,
     parseEventLogs,
     maxUint256,
 } from "viem";
@@ -20,7 +22,10 @@ export class LinksModule {
         private publicClient: PublicClient,
         private walletClient: WalletClient | undefined,
         private linksAddress: Address,
-        private usdcAddress: Address
+        private usdcAddress: Address,
+        // Ver comentario equivalente en links.ts — chain:null rompía
+        // writeContract contra Alchemy y providers estrictos. Fix: v0.3.1.
+        private chain: Chain
     ) { }
 
     // ─── Read ──────────────────────────────────────────────────────
@@ -113,7 +118,7 @@ export class LinksModule {
             functionName: "createLink",
             args: [params.recipient, token, params.amount, expiresIn, memo],
             account,
-            chain: null,
+            chain: this.chain,
         });
 
         const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
@@ -155,7 +160,7 @@ export class LinksModule {
             functionName: "payLink",
             args: [linkId],
             account,
-            chain: null,
+            chain: this.chain,
         });
 
         await this.publicClient.waitForTransactionReceipt({ hash });
@@ -178,7 +183,7 @@ export class LinksModule {
             functionName: "cancelLink",
             args: [linkId],
             account,
-            chain: null,
+            chain: this.chain,
         });
 
         await this.publicClient.waitForTransactionReceipt({ hash });
@@ -193,8 +198,16 @@ export class LinksModule {
         }
     }
 
-    private _getAccount(): Address {
-        const account = this.walletClient?.account?.address;
+    // Devuelve el objeto Account COMPLETO (no solo la address como string).
+    // Bug crítico corregido en v0.3.2: pasar solo el string de la address a
+    // writeContract({ account }) hace que viem trate la cuenta como una
+    // "JSON-RPC account" remota — sin la private key adjunta, viem le pide
+    // al propio nodo RPC que firme la transacción (eth_sendTransaction) en
+    // vez de firmar localmente y mandar eth_sendRawTransaction. Providers
+    // estrictos como Alchemy rechazan eth_sendTransaction con
+    // "Unsupported method", incluso teniendo saldo y calldata válidos.
+    private _getAccount(): Account {
+        const account = this.walletClient?.account;
         if (!account) {
             throw new PayNGoError("No account connected", ERRORS.NO_ACCOUNT);
         }
@@ -202,7 +215,7 @@ export class LinksModule {
     }
 
     private async _ensureAllowance(
-        owner: Address,
+        owner: Account,
         spender: Address,
         amount: bigint
     ): Promise<void> {
@@ -210,7 +223,7 @@ export class LinksModule {
             address: this.usdcAddress,
             abi: ERC20_ABI,
             functionName: "allowance",
-            args: [owner, spender],
+            args: [owner.address, spender],
         }) as bigint;
 
         if (allowance < amount) {
@@ -220,7 +233,7 @@ export class LinksModule {
                 functionName: "approve",
                 args: [spender, maxUint256],
                 account: owner,
-                chain: null,
+                chain: this.chain,
             });
             await this.publicClient.waitForTransactionReceipt({ hash });
         }

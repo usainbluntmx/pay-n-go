@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
 import { useIdentity } from "@/hooks/useIdentity";
 
 // El tipo de retorno de useIdentity() — lo inferimos automáticamente para no
@@ -16,6 +16,19 @@ const IdentityContext = createContext<IdentityContextValue | null>(null);
 // forzando al usuario a re-ingresar su contraseña en cada navegación.
 export function IdentityProvider({ children }: { children: ReactNode }) {
   const identity = useIdentity();
+
+  // DEBUG temporal — detecta remounts del Provider. Cada montaje genera un
+  // id aleatorio; si aparece más de un id distinto en consola durante un
+  // mismo flujo, el Provider (y por lo tanto sessionPasswordRef) se está
+  // recreando desde cero, perdiendo el estado en memoria.
+  const instanceId = useRef(Math.random().toString(36).slice(2, 8));
+  useEffect(() => {
+    console.log("[DEBUG] IdentityProvider MOUNTED, instance:", instanceId.current);
+    return () => {
+      console.log("[DEBUG] IdentityProvider UNMOUNTED, instance:", instanceId.current);
+    };
+  }, []);
+
   return (
     <IdentityContext.Provider value={identity}>
       {children}

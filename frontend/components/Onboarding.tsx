@@ -64,6 +64,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   };
 
   const handleSetPassword = async () => {
+    console.log("[DEBUG] entered handleSetPassword");
     setPasswordError(null);
     if (password.length < 8) {
       setPasswordError("Mínimo 8 caracteres");
@@ -75,11 +76,14 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     }
 
     setScreen("creating");
+    console.log("[DEBUG] set screen to creating, about to call createIdentity");
     try {
       const id = await createIdentity(password);
+      console.log("[DEBUG] createIdentity resolved");
       setMnemonic(id.mnemonic.split(" "));
       setScreen("backup");
     } catch (e) {
+      console.log("[DEBUG] createIdentity rejected:", e);
       setPasswordError(e instanceof Error ? e.message : "Error al crear la cuenta");
       setScreen("password");
     }
@@ -219,12 +223,12 @@ export function Onboarding({ onComplete }: OnboardingProps) {
           </div>
           {passwordError && <p className="ob-error">{passwordError}</p>}
           <button
-            className="ob-btn-primary"
-            onClick={handleSetPassword}
-            disabled={loading || !password || !password2}
-          >
-            Continuar →
-          </button>
+  className="ob-btn-primary"
+  onClick={handleSetPassword}
+  disabled={loading || !password || !password2}
+>
+  Continuar →
+</button>
           <button className="ob-btn-ghost" onClick={() => { setScreen("welcome"); setPassword(""); setPassword2(""); setPasswordError(null); }}>
             ← Volver
           </button>

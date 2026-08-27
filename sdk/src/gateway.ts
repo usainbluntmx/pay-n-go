@@ -1,4 +1,4 @@
-import { PublicClient, WalletClient, Address, maxUint256 } from "viem";
+import { PublicClient, WalletClient, Address, Account, Chain, maxUint256 } from "viem";
 import { PAYNGO_GATEWAY_ABI, ERC20_ABI } from "./constants";
 import {
     SponsorPolicy,
@@ -14,7 +14,8 @@ export class GatewayModule {
         private publicClient: PublicClient,
         private walletClient: WalletClient | undefined,
         private gatewayAddress: Address,
-        private usdcAddress: Address
+        private usdcAddress: Address,
+        private chain: Chain
     ) { }
 
     // ─── Read ──────────────────────────────────────────────────────
@@ -90,9 +91,9 @@ export class GatewayModule {
             address: this.gatewayAddress,
             abi: PAYNGO_GATEWAY_ABI,
             functionName: "executeGaslessPayment",
-            args: [account, params.recipient, params.amount, BigInt(gasLimit)],
+            args: [account.address, params.recipient, params.amount, BigInt(gasLimit)],
             account,
-            chain: null,
+            chain: this.chain,
         });
 
         const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
@@ -111,14 +112,15 @@ export class GatewayModule {
         }
     }
 
-    private _getAccount(): Address {
-        const account = this.walletClient?.account?.address;
+    // Ver comentario detallado en links.ts. Fix: v0.3.2.
+    private _getAccount(): Account {
+        const account = this.walletClient?.account;
         if (!account) throw new PayNGoError("No account connected", ERRORS.NO_ACCOUNT);
         return account;
     }
 
     private async _ensureAllowance(
-        owner: Address,
+        owner: Account,
         spender: Address,
         amount: bigint
     ): Promise<void> {
@@ -126,7 +128,7 @@ export class GatewayModule {
             address: this.usdcAddress,
             abi: ERC20_ABI,
             functionName: "allowance",
-            args: [owner, spender],
+            args: [owner.address, spender],
         }) as bigint;
 
         if (allowance < amount) {
@@ -136,7 +138,7 @@ export class GatewayModule {
                 functionName: "approve",
                 args: [spender, maxUint256],
                 account: owner,
-                chain: null,
+                chain: this.chain,
             });
             await this.publicClient.waitForTransactionReceipt({ hash });
         }

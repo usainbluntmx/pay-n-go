@@ -1,6 +1,6 @@
 {
     "name": "@zero-two-labs/payngo",
-    "version": "0.3.0",
+    "version": "0.3.2",
     "description": "SDK for Pay'n Go — stablecoin payment links, routing, and gasless sponsorship on Ethereum Sepolia",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",

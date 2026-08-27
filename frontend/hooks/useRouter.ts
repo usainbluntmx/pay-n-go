@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { parseUnits, formatUnits } from "viem";
 import { usePublicClient } from "wagmi";
 import { usePayNGoClient } from "./usePayNGoClient";
-import { RouteQuote } from "@payngo-labs/sdk";
+import { RouteQuote } from "@zero-two-labs/payngo";
 import { useAccount } from "wagmi";
 
 const ALLOWANCE_ABI = [

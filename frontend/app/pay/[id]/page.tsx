@@ -5,13 +5,13 @@ import { useParams } from "next/navigation";
 import { useAccount } from "wagmi";
 import { formatUnits } from "viem";
 import { useLinks } from "@/hooks/useLinks";
-import { PaymentLink, LinkStatus } from "@payngo-labs/sdk";
+import { PaymentLink, LinkStatus } from "@zero-two-labs/payngo";
 
 const STATUS_LABELS: Record<number, { label: string; color: string }> = {
-  [LinkStatus.Active]: { label: "AWAITING PAYMENT", color: "#00ffaa" },
-  [LinkStatus.Paid]: { label: "PAID", color: "#3b82f6" },
-  [LinkStatus.Cancelled]: { label: "CANCELLED", color: "#ef4444" },
-  [LinkStatus.Expired]: { label: "EXPIRED", color: "#f59e0b" },
+  [LinkStatus.Active]: { label: "ESPERANDO PAGO", color: "#1a7a1a" },
+  [LinkStatus.Paid]: { label: "PAGADO", color: "#2563eb" },
+  [LinkStatus.Cancelled]: { label: "CANCELADO", color: "#c0392b" },
+  [LinkStatus.Expired]: { label: "EXPIRADO", color: "#c8860a" },
 };
 
 export default function PayPage() {
@@ -62,19 +62,19 @@ export default function PayPage() {
           {fetching ? (
             <div className="state-loading">
               <span className="spinner" />
-              <p>Loading payment...</p>
+              <p>Cargando pago...</p>
             </div>
           ) : !link ? (
             <div className="state-error">
               <span className="state-icon">✕</span>
-              <h2>Link not found</h2>
-              <p>This payment link does not exist or has been removed.</p>
+              <h2>Link no encontrado</h2>
+              <p>Este link de pago no existe o fue eliminado.</p>
             </div>
           ) : paid ? (
             <div className="state-success">
               <span className="state-icon success">✓</span>
-              <h2>Payment sent!</h2>
-              <p>The payment was processed successfully.</p>
+              <h2>¡Pago enviado!</h2>
+              <p>El pago se procesó exitosamente.</p>
               {txHash && (
                 <a
                   href={"https://sepolia.etherscan.io/tx/" + txHash}
@@ -82,7 +82,7 @@ export default function PayPage() {
                   rel="noopener noreferrer"
                   className="tx-link"
                 >
-                  View on Etherscan →
+                  Ver en Etherscan →
                 </a>
               )}
             </div>
@@ -92,7 +92,7 @@ export default function PayPage() {
                 className="status-badge"
                 style={{
                   color: status?.color,
-                  borderColor: (status?.color ?? "#00ffaa") + "40",
+                  borderColor: status?.color,
                 }}
               >
                 <span
@@ -113,31 +113,31 @@ export default function PayPage() {
 
               <div className="pay-details">
                 <div className="detail-row">
-                  <span>From</span>
+                  <span>De</span>
                   <span className="mono">
                     {link.creator.slice(0, 6)}...{link.creator.slice(-4)}
                   </span>
                 </div>
                 <div className="detail-row">
-                  <span>To</span>
+                  <span>Para</span>
                   <span className="mono">
                     {link.recipient.slice(0, 6)}...{link.recipient.slice(-4)}
                   </span>
                 </div>
                 <div className="detail-row">
-                  <span>Protocol fee (0.5%)</span>
+                  <span>Comisión del protocolo (0.5%)</span>
                   <span className="mono">{formatUnits(fee, 6)} USDC</span>
                 </div>
                 {link.expiresAt > 0n && (
                   <div className="detail-row">
-                    <span>Expires</span>
+                    <span>Expira</span>
                     <span className="mono">
                       {new Date(Number(link.expiresAt) * 1000).toLocaleDateString()}
                     </span>
                   </div>
                 )}
                 <div className="detail-row total">
-                  <span>You pay</span>
+                  <span>Tú pagas</span>
                   <span className="mono accent">
                     {formatUnits(youPay, 6)} USDC
                   </span>
@@ -154,23 +154,23 @@ export default function PayPage() {
                     disabled={loading}
                   >
                     {loading
-                      ? "Processing..."
-                      : "Pay " + formatUnits(youPay, 6) + " USDC"}
+                      ? "Procesando..."
+                      : "Pagar " + formatUnits(youPay, 6) + " USDC"}
                   </button>
                 ) : (
                   <div className="connect-prompt">
-                    <p>Connect your wallet to pay</p>
+                    <p>Conecta tu wallet para pagar</p>
                     <w3m-button />
                   </div>
                 )
               ) : (
                 <div className="inactive-notice">
-                  This link is{" "}
+                  Este link está{" "}
                   {formatted?.isPaid
-                    ? "already paid"
+                    ? "ya pagado"
                     : formatted?.isCancelled
-                      ? "cancelled"
-                      : "expired"}
+                      ? "cancelado"
+                      : "expirado"}
                   .
                 </div>
               )}
@@ -179,15 +179,17 @@ export default function PayPage() {
         </div>
 
         <p className="pay-footer">
-          Secured by Pay&apos;n Go Protocol · Ethereum Sepolia
+          Protegido por Pay&apos;n Go Protocol · Ethereum Sepolia
         </p>
       </div>
 
       <style jsx>{`
+        @import url('https://fonts.googleapis.com/css2?family=Comic+Neue:ital,wght@0,300;0,400;0,700;1,400&display=swap');
+
         :global(body) {
-          background: #080b0f;
-          color: #e2e8f0;
-          font-family: 'IBM Plex Mono', 'Fira Code', monospace;
+          background: #f5f0e8;
+          color: #1a1a1a;
+          font-family: 'Comic Neue', 'Comic Sans MS', cursive;
           margin: 0;
         }
 
@@ -204,9 +206,9 @@ export default function PayPage() {
           inset: 0;
           z-index: 0;
           background-image:
-            linear-gradient(rgba(0,255,170,0.03) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(0,255,170,0.03) 1px, transparent 1px);
-          background-size: 40px 40px;
+            linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px);
+          background-size: 28px 28px;
           pointer-events: none;
         }
 
@@ -230,37 +232,46 @@ export default function PayPage() {
         }
 
         .pay-logo {
-          font-size: 1.1rem;
+          font-size: 1.2rem;
           font-weight: 700;
-          letter-spacing: 0.1em;
+          letter-spacing: 0.08em;
+          font-family: 'Comic Neue', cursive;
         }
 
-        .accent { color: #00ffaa; }
+        .accent { text-decoration: underline; text-underline-offset: 3px; }
 
         .pay-card {
           width: 100%;
-          border: 1px solid rgba(0,255,170,0.15);
-          background: rgba(8,11,15,0.95);
-          border-radius: 4px;
+          border: 2px solid #1a1a1a;
+          background: #fff;
+          border-radius: 5px 12px 6px 10px / 10px 6px 12px 5px;
           padding: 2rem;
-          box-shadow: 0 0 40px rgba(0,255,170,0.05);
+          box-shadow: 6px 6px 0 #1a1a1a;
+          animation: card-appear 0.4s ease;
+        }
+
+        @keyframes card-appear {
+          from { opacity: 0; transform: translateY(16px); }
+          to { opacity: 1; transform: translateY(0); }
         }
 
         .status-badge {
           display: inline-flex;
           align-items: center;
           gap: 0.5rem;
-          font-size: 0.65rem;
-          letter-spacing: 0.15em;
-          border: 1px solid;
-          padding: 0.3rem 0.75rem;
-          border-radius: 2px;
+          font-size: 0.68rem;
+          font-weight: 700;
+          letter-spacing: 0.1em;
+          border: 2px solid;
+          padding: 0.35rem 0.85rem;
+          border-radius: 99px;
           margin-bottom: 2rem;
+          font-family: 'Comic Neue', cursive;
         }
 
         .badge-dot {
-          width: 5px;
-          height: 5px;
+          width: 6px;
+          height: 6px;
           border-radius: 50%;
           animation: pulse 2s infinite;
         }
@@ -280,24 +291,27 @@ export default function PayPage() {
         .amount-value {
           font-size: 3.5rem;
           font-weight: 700;
-          color: #f8fafc;
+          color: #1a1a1a;
           line-height: 1;
+          font-family: 'Comic Neue', cursive;
         }
 
-        .amount-currency { font-size: 1.25rem; color: #475569; }
+        .amount-currency { font-size: 1.25rem; color: #666; }
 
         .memo {
-          font-size: 0.85rem;
-          color: #64748b;
+          font-size: 0.88rem;
+          color: #555;
           font-style: italic;
           margin: 0 0 2rem;
+          font-family: 'Comic Neue', cursive;
         }
 
         .pay-details {
-          border: 1px solid rgba(0,255,170,0.08);
-          border-radius: 2px;
+          border: 2px solid #1a1a1a;
+          border-radius: 3px 8px 4px 7px / 7px 4px 8px 3px;
           overflow: hidden;
           margin-bottom: 1.5rem;
+          background: #f5f0e8;
         }
 
         .detail-row {
@@ -305,40 +319,41 @@ export default function PayPage() {
           justify-content: space-between;
           align-items: center;
           padding: 0.75rem 1rem;
-          font-size: 0.78rem;
-          color: #64748b;
-          border-bottom: 1px solid rgba(0,255,170,0.05);
+          font-size: 0.82rem;
+          color: #555;
+          border-bottom: 1px solid rgba(0,0,0,0.1);
+          font-family: 'Comic Neue', cursive;
         }
 
         .detail-row:last-child { border-bottom: none; }
 
         .detail-row.total {
-          color: #e2e8f0;
-          font-weight: 600;
-          background: rgba(0,255,170,0.03);
+          color: #1a1a1a;
+          font-weight: 700;
+          background: #fff;
         }
 
-        .mono { font-family: inherit; }
+        .mono { font-family: 'Comic Neue', cursive; }
 
         .pay-btn {
           width: 100%;
-          background: #00ffaa;
-          color: #080b0f;
-          border: none;
-          border-radius: 2px;
+          background: #1a1a1a;
+          color: #f5f0e8;
+          border: 2px solid #1a1a1a;
+          border-radius: 3px 8px 4px 7px / 7px 4px 8px 3px;
           padding: 1rem;
-          font-family: inherit;
-          font-size: 0.9rem;
+          font-family: 'Comic Neue', cursive;
+          font-size: 0.95rem;
           font-weight: 700;
-          letter-spacing: 0.05em;
+          letter-spacing: 0.03em;
           cursor: pointer;
-          transition: all 0.2s;
-          box-shadow: 0 0 20px rgba(0,255,170,0.2);
+          transition: transform 0.15s ease, box-shadow 0.15s ease;
+          box-shadow: 4px 4px 0 rgba(0,0,0,0.25);
         }
 
         .pay-btn:hover:not(:disabled) {
-          background: #00cc88;
-          box-shadow: 0 0 30px rgba(0,255,170,0.4);
+          transform: translate(-2px, -2px);
+          box-shadow: 6px 6px 0 rgba(0,0,0,0.25);
         }
 
         .pay-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -346,27 +361,32 @@ export default function PayPage() {
         .connect-prompt { text-align: center; }
 
         .connect-prompt p {
-          font-size: 0.8rem;
-          color: #475569;
+          font-size: 0.84rem;
+          color: #666;
           margin-bottom: 1rem;
+          font-family: 'Comic Neue', cursive;
         }
 
         .inactive-notice {
           text-align: center;
-          font-size: 0.85rem;
-          color: #475569;
+          font-size: 0.88rem;
+          color: #555;
           padding: 1rem;
-          border: 1px solid rgba(255,255,255,0.05);
-          border-radius: 2px;
+          border: 2px solid #1a1a1a;
+          border-radius: 3px 8px 4px 7px / 7px 4px 8px 3px;
+          background: #f5f0e8;
+          font-family: 'Comic Neue', cursive;
         }
 
         .pay-error {
-          font-size: 0.78rem;
-          color: #ef4444;
+          font-size: 0.8rem;
+          color: #c0392b;
           padding: 0.75rem;
-          border: 1px solid rgba(239,68,68,0.2);
-          border-radius: 2px;
+          border: 2px solid #c0392b;
+          border-radius: 3px 8px 4px 7px / 7px 4px 8px 3px;
+          background: #fff5f5;
           margin-bottom: 1rem;
+          font-family: 'Comic Neue', cursive;
         }
 
         .state-loading,
@@ -378,12 +398,12 @@ export default function PayPage() {
 
         .spinner {
           display: inline-block;
-          width: 24px;
-          height: 24px;
-          border: 2px solid rgba(0,255,170,0.2);
-          border-top-color: #00ffaa;
+          width: 32px;
+          height: 32px;
+          border: 3px solid rgba(0,0,0,0.1);
+          border-top-color: #1a1a1a;
           border-radius: 50%;
-          animation: spin 0.8s linear infinite;
+          animation: spin 0.9s linear infinite;
           margin-bottom: 1rem;
         }
 
@@ -393,41 +413,43 @@ export default function PayPage() {
 
         .state-icon {
           display: block;
-          font-size: 2rem;
-          color: #ef4444;
+          font-size: 2.2rem;
+          color: #c0392b;
           margin-bottom: 1rem;
         }
 
-        .state-icon.success { color: #00ffaa; }
+        .state-icon.success { color: #1a7a1a; }
 
         .state-error h2,
         .state-success h2 {
-          color: #f8fafc;
+          color: #1a1a1a;
           margin: 0 0 0.5rem;
+          font-family: 'Comic Neue', cursive;
         }
 
         .state-error p,
         .state-success p {
-          color: #64748b;
-          font-size: 0.85rem;
+          color: #666;
+          font-size: 0.88rem;
           margin: 0;
+          font-family: 'Comic Neue', cursive;
         }
 
         .tx-link {
           display: inline-block;
           margin-top: 1rem;
-          font-size: 0.8rem;
-          color: #00ffaa;
-          text-decoration: none;
+          font-size: 0.82rem;
+          color: #2563eb;
+          text-decoration: underline;
+          font-family: 'Comic Neue', cursive;
         }
 
-        .tx-link:hover { text-decoration: underline; }
-
         .pay-footer {
-          font-size: 0.7rem;
-          color: #1e293b;
-          letter-spacing: 0.08em;
+          font-size: 0.72rem;
+          color: #888;
+          letter-spacing: 0.04em;
           text-align: center;
+          font-family: 'Comic Neue', cursive;
         }
       `}</style>
     </main>

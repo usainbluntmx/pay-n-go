@@ -4,6 +4,25 @@ SDK de TypeScript para [Pay'n Go](https://pay-n-go-weld.vercel.app) — pagos en
 
 Construido sobre [viem](https://viem.sh). Funciona en Node.js y en el navegador.
 
+**Versión mínima recomendada: `^0.3.2`** — versiones anteriores tienen un bug crítico donde toda operación de escritura (`createLink`, `payLink`, `executePayment`, `executeGaslessPayment`, etc.) falla contra providers RPC estrictos como Alchemy. Ver [Changelog](#changelog).
+
+---
+
+## Changelog
+
+### 0.3.2
+- **Fix crítico:** las operaciones de escritura (`createLink`, `payLink`, `cancelLink`, `executePayment`, `executeGaslessPayment`, `setGaslessThreshold`, y el `approve` interno de USDC) fallaban con `"Unsupported method: eth_sendTransaction"` contra Alchemy y otros providers RPC estrictos. La causa: los tres módulos extraían solo la `address` (string) del `walletClient.account` en vez de pasar el objeto `Account` completo a `writeContract`. Sin el objeto completo, viem no puede firmar localmente y en su lugar le pide al RPC que firme — algo que Alchemy rechaza. Verificado end-to-end contra Ethereum Sepolia real (23/23 tests, incluyendo `createLink`→`payLink` con fondos reales).
+
+### 0.3.1
+- Fix: `chain: null` en todos los `writeContract` causaba comportamiento inconsistente entre providers RPC. Ahora cada módulo recibe y usa la `Chain` real de viem, resuelta automáticamente por `PayNGoClient` a partir de `chainId`.
+
+### 0.3.0
+- Renombrado de scope: `@payngo-labs/sdk` → `@zero-two-labs/payngo`.
+- Fix: el export de `GaslessModule` en `index.ts` apuntaba a un archivo (`./gasless`) que no existía — rompía el build de cualquiera que clonara el repo. Eliminado; el sponsorship gasless vive en `GatewayModule` (`client.gateway.*`).
+- Fix: `agent-demo.ts` se filtraba al tarball publicado en npm. Excluido del build de `tsc`.
+- Agregado `TOKEN_ADDRESSES` — dirección de MXNB en Arbitrum Sepolia, para chains sin el stack completo de contratos PayNGo desplegado.
+- Actualizada la dirección de `PayNGoGateway` en `CONTRACT_ADDRESSES` tras el redeploy que corrige una vulnerabilidad de `sponsorTransaction`/`executeGaslessPayment` (cualquiera podía drenar el allowance de USDC de otro usuario).
+
 ---
 
 ## Instalación
@@ -293,6 +312,7 @@ No hay tests todavía (`npm test` corre `jest --passWithNoTests`) — si quieres
 
 ## Estado y limitaciones conocidas
 
+- **Verificado end-to-end** contra Ethereum Sepolia real en `v0.3.2`: instanciación, lecturas de los 3 módulos, y el flujo completo de escritura `createLink → getLink → isLinkPayable → payLink → getLink (Paid)`, con una wallet real y fondos reales. 23/23 tests.
 - Las fees mostradas por `LinksModule.payLink()` (0.5%) y `RouterModule.executePayment()` (0.3%) están hardcodeadas en el SDK, no se leen on-chain — pueden desincronizarse si los contratos cambian. Lee los eventos `LinkPaid`/`PaymentRouted` del receipt si necesitas el monto exacto cobrado.
 - `GatewayModule` implementa el sponsorship en USDC de `PayNGoGateway.sol`, distinto del gasless ERC-4337 real (Pimlico) que usa el frontend de Pay'n Go en producción.
 - Solo Ethereum Sepolia tiene el stack completo de contratos desplegado. Arbitrum Sepolia (MXNB) solo expone la dirección del token vía `TOKEN_ADDRESSES`.
