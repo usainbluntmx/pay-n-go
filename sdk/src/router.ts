@@ -1,4 +1,4 @@
-import { PublicClient, WalletClient, Address, Account, Chain, zeroHash, maxUint256 } from "viem";
+import { PublicClient, WalletClient, Address, Account, Chain, zeroHash, maxUint256, parseEventLogs } from "viem";
 import { PAYNGO_ROUTER_ABI, ERC20_ABI } from "./constants";
 import {
     RouteQuote,
@@ -105,15 +105,31 @@ export class RouterModule {
 
         const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
 
-        const fee = (params.amount * 30n) / 10_000n;
-        const amountOut = params.amount - fee;
+        // Leer el orderId, amountOut y fee REALES del evento PaymentRouted —
+        // antes se devolvía receipt.transactionHash como "orderId" (no es
+        // el ID que genera el contrato) y fee/amountOut se recalculaban
+        // localmente con FEE_BPS=30 hardcodeado, ignorando cualquier
+        // feeBps adicional de la ruta usada. Fix: v0.3.5.
+        const logs = parseEventLogs({
+            abi: PAYNGO_ROUTER_ABI,
+            logs: receipt.logs,
+            eventName: "PaymentRouted",
+        });
+
+        if (logs.length === 0) {
+            throw new PayNGoError("PaymentRouted event not found", ERRORS.TX_FAILED);
+        }
+
+        const log = logs[0] as unknown as {
+            args: { orderId: `0x${string}`; routeId: bigint; amountOut: bigint; fee: bigint };
+        };
 
         return {
-            orderId: receipt.transactionHash as `0x${string}`,
+            orderId: log.args.orderId,
             txHash: hash,
-            amountOut,
-            fee,
-            routeId: params.routeId ?? 0n,
+            amountOut: log.args.amountOut,
+            fee: log.args.fee,
+            routeId: log.args.routeId,
         };
     }
 

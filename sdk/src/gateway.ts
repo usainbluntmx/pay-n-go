@@ -1,4 +1,4 @@
-import { PublicClient, WalletClient, Address, Account, Chain, maxUint256 } from "viem";
+import { PublicClient, WalletClient, Address, Account, Chain, maxUint256, parseEventLogs } from "viem";
 import { PAYNGO_GATEWAY_ABI, ERC20_ABI } from "./constants";
 import {
     SponsorPolicy,
@@ -98,8 +98,23 @@ export class GatewayModule {
 
         const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
 
+        // Leer el txId real del evento GasSponsored — antes se devolvía
+        // receipt.transactionHash como "txId", que no es el identificador
+        // que el contrato genera y emite. Fix: v0.3.5.
+        const logs = parseEventLogs({
+            abi: PAYNGO_GATEWAY_ABI,
+            logs: receipt.logs,
+            eventName: "GasSponsored",
+        });
+
+        if (logs.length === 0) {
+            throw new PayNGoError("GasSponsored event not found", ERRORS.TX_FAILED);
+        }
+
+        const log = logs[0] as unknown as { args: { txId: `0x${string}` } };
+
         return {
-            txId: receipt.transactionHash as `0x${string}`,
+            txId: log.args.txId,
             txHash: hash,
         };
     }

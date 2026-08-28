@@ -1,4 +1,4 @@
-import { Address, Hash, PublicClient, WalletClient } from "viem";
+import { Address, Chain, Hash, PublicClient, WalletClient } from "viem";
 
 // ─── Config ───────────────────────────────────────────────────────
 
@@ -7,6 +7,12 @@ export interface PayNGoConfig {
     walletClient?: WalletClient;
     chainId: number;
     contracts?: Partial<ContractAddresses>;
+    // Objeto Chain de viem para chains no incluidas en el mapa interno del
+    // SDK (hoy: Ethereum mainnet/Sepolia, Arbitrum Sepolia, Hardhat local).
+    // Si tu chainId no es una de esas, pásalo aquí junto con `contracts` —
+    // sin esto, chains custom lanzan PayNGoError aunque hayas pasado
+    // `contracts` manualmente. Ver README § Redes soportadas.
+    chain?: Chain;
 }
 
 export interface ContractAddresses {
