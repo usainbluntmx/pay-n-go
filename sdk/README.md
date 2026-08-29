@@ -4,11 +4,33 @@ SDK de TypeScript para [Pay'n Go](https://pay-n-go-weld.vercel.app) — pagos en
 
 Construido sobre [viem](https://viem.sh). Funciona en Node.js y en el navegador.
 
-**Versión mínima recomendada: `^0.3.2`** — versiones anteriores tienen un bug crítico donde toda operación de escritura (`createLink`, `payLink`, `executePayment`, `executeGaslessPayment`, etc.) falla contra providers RPC estrictos como Alchemy. Ver [Changelog](#changelog).
+**Versión mínima recomendada: `^0.4.2`** — versiones anteriores tienen bugs críticos en operaciones de escritura y en el mapeo de errores del contrato. Ver [Changelog](#changelog).
 
 ---
 
 ## Changelog
+
+### 0.4.2
+- **Fix crítico:** los custom errors del contrato (`LinkNotActive`, `SlippageExceeded`, `UnauthorizedCaller`, etc.), aunque agregados al ABI en v0.4.0, no lograban mapearse a `PayNGoError` cuando el SDK (compilado a CommonJS) se consumía desde un proyecto ESM — un "dual package hazard": Node puede cargar dos instancias de módulo distintas de `viem` en ese escenario, y las comprobaciones `instanceof BaseError`/`instanceof ContractFunctionRevertedError` fallaban silenciosamente contra el error real (construido con la instancia de clases del contexto ESM del caller). `rethrowAsPayNGoError` ahora detecta el error decodificable únicamente por forma (duck typing — presencia de un método `.walk()` invocable y de `data.errorName`), sin ningún `instanceof` contra clases de viem, inmune a en qué contexto de módulo se haya construido el error originalmente. Verificado contra una transacción real revertida en Sepolia (`LinkNotActive`) tanto en CJS como en un consumidor ESM.
+
+### 0.4.1
+- Intento intermedio del fix anterior (duck typing solo en el chequeo interno, `instanceof BaseError` externo aún presente) — insuficiente, ver 0.4.2.
+
+### 0.4.0
+- **Fix:** ninguno de los tres ABIs (`PAYNGO_LINKS_ABI`, `PAYNGO_ROUTER_ABI`, `PAYNGO_GATEWAY_ABI`) incluía las declaraciones `type: "error"` de los custom errors de Solidity — sin ellas, viem no podía decodificar ningún revert del contrato (quedaban como un selector hex sin resolver, ej. `"0x946a237a"`). Agregados los 22 custom errors de los tres contratos a sus respectivos ABIs.
+- Nuevo módulo `contractErrors.ts` exportando `rethrowAsPayNGoError()` — decodifica un error de viem contra los custom errors conocidos y lo relanza como `PayNGoError` con `code` igual al nombre del error de Solidity (ej. `"LinkNotActive"`), o relanza el error original sin envolver si no lo reconoce. Conectado a los 6 métodos de escritura de `LinksModule`, `RouterModule` y `GatewayModule`.
+
+### 0.3.9
+- **Fix:** `_parseResponse`/`_parseBatchResponse` de `PayNGoAgent` solo quitaban fences de markdown (```` ```json ````) antes de `JSON.parse` — una respuesta de Claude con texto antes o después del bloque JSON (ej. `"Aquí tienes tu sugerencia:\n{...}"`) rompía el parseo aunque el JSON en sí fuera válido. Ahora se extrae el primer bloque JSON balanceado (objeto o array, respetando strings y escapes) del texto, ignorando cualquier prosa circundante.
+- **Fix:** el timeout de `_callClaude` reportaba `ERRORS.TX_FAILED` — código semánticamente incorrecto para un timeout de red. Nuevo código `ERRORS.AGENT_TIMEOUT`; los errores de parseo también migraron de `TX_FAILED` a un nuevo `ERRORS.PARSE_FAILED` más específico.
+- Eliminado `PayNGoClientConfig` de `types.ts` — declaraba `pimlicoApiKey`/`rpcUrl` pero ningún módulo del SDK lo consumía; era un tipo exportado sin uso real.
+
+### 0.3.8
+- **Fix:** `getLink()` no detectaba links inexistentes — el contrato no revierte para un `linkId` que no existe, devuelve un struct vacío (`id=0`, `creator=address(0)`, `status=Active`). Esto hacía que `isLinkPayable()` reportara `true` para links inexistentes y `payLink()` fallara con un error crudo de viem en vez del `PayNGoError(LINK_NOT_FOUND)` que el propio SDK define. `getLink()` ahora detecta el struct vacío y lanza el error correcto — protegiendo también a `payLink()`, que lo llama internamente.
+- **Fix:** `payLink()` calculaba `fee`/`amountPaid` localmente (0.5% hardcodeado) en vez de leerlos del evento `LinkPaid` — mismo patrón que ya se había corregido en `RouterModule`/`GatewayModule` en v0.3.5, ahora aplicado también a `LinksModule`.
+- **Fix:** `executePayment()` con un `routeId` explícito seguía calculando `minAmountOut` a partir de `getBestRoute()` en vez de la ruta realmente elegida — si la ruta forzada tenía peor `amountOut`/fee que la mejor, el contrato revertía `SlippageExceeded` aunque el usuario la haya seleccionado a propósito. Ahora, cuando se pasa `routeId !== 0`, el SDK busca esa cotización específica en `getQuotes()` y valida que exista y esté disponible antes de calcular `minAmountOut`, lanzando `PayNGoError(ROUTE_NOT_FOUND)` con un mensaje claro si no.
+- Arreglado `.gitignore` del paquete SDK — se había guardado sin el punto inicial (`gitignore`), por lo que no funcionaba como archivo de ignore (el `.gitignore` del repo raíz cubría la falta, sin exponer secretos, pero el archivo era basura confusa).
+- Agregados tests unitarios para la detección de `LINK_NOT_FOUND` (`test/unit/links.test.ts`). 28/28 tests unitarios pasando.
 
 ### 0.3.7
 - Agregados tests: 26 unitarios (`test/unit/`, mockeados, sin red) cubriendo `PayNGoClient`, `PayNGoAgent` (incluyendo la validación de `autoExecute` agregada en 0.3.6), y las constantes/tipos exportados; y un test de integración end-to-end (`test/integration/`) que corre transacciones reales contra Sepolia — el mismo script usado para verificar manualmente los fixes de 0.3.2 y 0.3.5 antes de publicarlos. `dotenv` movido de `dependencies` a `devDependencies` (solo lo usan la demo y el test de integración).
@@ -201,7 +223,7 @@ await client.links.cancelLink(linkId);
 
 `payLink()` gestiona el `approve` de USDC automáticamente si el allowance actual es insuficiente — no necesitas llamar `approve` tú mismo.
 
-> **Nota sobre `fee`:** el valor que retorna `payLink()` se calcula en el SDK como 0.5% (`amount * 50n / 10_000n`), no se lee del evento `LinkPaid` emitido por el contrato. En la práctica coincide con la fee real de `PayNGoLinks.sol`, pero si el contrato cambia su fee sin que el SDK se actualice, este valor puede desincronizarse. Si necesitas el monto exacto cobrado, lee el evento `LinkPaid` del receipt de la transacción.
+> **`fee` y `amountPaid` se leen del evento `LinkPaid` real** emitido por el contrato (desde v0.3.8) — reflejan exactamente lo que se cobró on-chain.
 
 ### `client.router` — `RouterModule`
 
@@ -330,10 +352,12 @@ try {
   if (e instanceof PayNGoError) {
     console.log(e.code);    // ej. ERRORS.LINK_NOT_PAYABLE
     console.log(e.message);
-    console.log(e.cause);   // error original, si aplica
+    console.log(e.details); // error original de viem, si aplica
   }
 }
 ```
+
+`e.code` puede ser uno de los valores en `ERRORS` (`LINK_NOT_FOUND`, `LINK_NOT_PAYABLE`, `ROUTE_NOT_FOUND`, `AGENT_TIMEOUT`, `PARSE_FAILED`, etc.), o **el nombre exacto de un custom error de Solidity** cuando el revert viene directo del contrato — ej. `"LinkNotActive"`, `"SlippageExceeded"`, `"UnauthorizedCaller"`, `"NotLinkCreator"` (desde v0.4.2; ver [Changelog](#changelog)). Si el revert no se reconoce, el SDK relanza el error original de viem sin envolverlo — nunca inventa un `code` genérico que oculte información real.
 
 ---
 
@@ -389,7 +413,8 @@ El test de integración (`test/integration/sdk.integration.ts`) ejecuta transacc
 - `GatewayModule` implementa el sponsorship en USDC de `PayNGoGateway.sol`, distinto del gasless ERC-4337 real (Pimlico) que usa el frontend de Pay'n Go en producción.
 - Solo Ethereum Sepolia tiene el stack completo de contratos desplegado. Arbitrum Sepolia (MXNB) solo expone la dirección del token vía `TOKEN_ADDRESSES`.
 - `PayNGoAgent.autoExecute` ahora valida `amount`/`recipient` de forma programática, independiente del `riskLevel` del LLM (desde v0.3.6). Sigue siendo ejecución sin confirmación humana — revisa `suggestion` manualmente cuando sea posible.
-- Tests: 26 unitarios (`npm test`, sin red) + 16 de integración end-to-end contra Sepolia real (`npm run test:integration`, requiere wallet fondeada). Ver [Tests](#tests).
+- `getLink()`, `payLink()` y `executePayment()` con `routeId` explícito fueron corregidos en v0.3.8 tras una segunda revisión de seguridad — ver Changelog. Todos verificados contra Ethereum Sepolia real antes de publicar.
+- Tests: 28 unitarios (`npm test`, sin red) + 16 de integración end-to-end contra Sepolia real (`npm run test:integration`, requiere wallet fondeada). Ver [Tests](#tests).
 
 ---
 

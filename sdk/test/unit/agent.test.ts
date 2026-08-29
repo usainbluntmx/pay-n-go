@@ -173,3 +173,37 @@ describe("PayNGoAgent — parsers", () => {
     expect(parsed).toHaveLength(2);
   });
 });
+
+describe("PayNGoAgent — extracción de JSON con texto circundante (fix v0.3.9)", () => {
+  function callPrivate<T>(agent: PayNGoAgent, method: string, ...args: unknown[]): T {
+    return (agent as unknown as Record<string, (...a: unknown[]) => T>)[method](...args);
+  }
+
+  it("_parseResponse extrae JSON con texto ANTES del objeto", () => {
+    const agent = makeAgent();
+    const raw = `Aquí tienes tu sugerencia:\n${JSON.stringify(suggestion())}`;
+    const parsed = callPrivate<AgentPaymentSuggestion>(agent, "_parseResponse", raw);
+    expect(parsed.action).toBe("execute_payment");
+  });
+
+  it("_parseResponse extrae JSON con texto DESPUÉS del objeto", () => {
+    const agent = makeAgent();
+    const raw = `${JSON.stringify(suggestion())}\nEspero que esto ayude.`;
+    const parsed = callPrivate<AgentPaymentSuggestion>(agent, "_parseResponse", raw);
+    expect(parsed.action).toBe("execute_payment");
+  });
+
+  it("_parseResponse ignora llaves dentro de strings del propio JSON al buscar el cierre", () => {
+    const agent = makeAgent();
+    const s = suggestion({ reasoning: "el usuario dijo algo con { y } dentro del texto" });
+    const raw = `Nota: ${JSON.stringify(s)}`;
+    const parsed = callPrivate<AgentPaymentSuggestion>(agent, "_parseResponse", raw);
+    expect(parsed.reasoning).toContain("{ y }");
+  });
+
+  it("_parseResponse lanza PARSE_FAILED si no hay ningún objeto JSON", () => {
+    const agent = makeAgent();
+    expect(() => callPrivate(agent, "_parseResponse", "esto no tiene JSON en absoluto"))
+      .toThrow();
+  });
+});

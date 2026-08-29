@@ -8,6 +8,7 @@ import {
     SponsorMode,
 } from "./types";
 import { PayNGoError, ERRORS } from "./errors";
+import { rethrowAsPayNGoError } from "./contractErrors";
 
 export class GatewayModule {
     constructor(
@@ -87,36 +88,43 @@ export class GatewayModule {
 
         await this._ensureAllowance(account, this.gatewayAddress, params.amount);
 
-        const hash = await this.walletClient!.writeContract({
-            address: this.gatewayAddress,
-            abi: PAYNGO_GATEWAY_ABI,
-            functionName: "executeGaslessPayment",
-            args: [account.address, params.recipient, params.amount, BigInt(gasLimit)],
-            account,
-            chain: this.chain,
-        });
+        try {
+            const hash = await this.walletClient!.writeContract({
+                address: this.gatewayAddress,
+                abi: PAYNGO_GATEWAY_ABI,
+                functionName: "executeGaslessPayment",
+                args: [account.address, params.recipient, params.amount, BigInt(gasLimit)],
+                account,
+                chain: this.chain,
+            });
 
-        const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+            const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
 
-        // Leer el txId real del evento GasSponsored — antes se devolvía
-        // receipt.transactionHash como "txId", que no es el identificador
-        // que el contrato genera y emite. Fix: v0.3.5.
-        const logs = parseEventLogs({
-            abi: PAYNGO_GATEWAY_ABI,
-            logs: receipt.logs,
-            eventName: "GasSponsored",
-        });
+            // Leer el txId real del evento GasSponsored — antes se devolvía
+            // receipt.transactionHash como "txId", que no es el identificador
+            // que el contrato genera y emite. Fix: v0.3.5.
+            const logs = parseEventLogs({
+                abi: PAYNGO_GATEWAY_ABI,
+                logs: receipt.logs,
+                eventName: "GasSponsored",
+            });
 
-        if (logs.length === 0) {
-            throw new PayNGoError("GasSponsored event not found", ERRORS.TX_FAILED);
+            if (logs.length === 0) {
+                throw new PayNGoError("GasSponsored event not found", ERRORS.TX_FAILED);
+            }
+
+            const log = logs[0] as unknown as { args: { txId: `0x${string}` } };
+
+            return {
+                txId: log.args.txId,
+                txHash: hash,
+            };
+        } catch (e) {
+            if (e instanceof PayNGoError) throw e;
+            // ej. UserBlacklisted, UserNotWhitelisted, GasPriceTooHigh,
+            // GasLimitExceeded, TxAlreadyProcessed. Fix: v0.3.9.
+            rethrowAsPayNGoError(e);
         }
-
-        const log = logs[0] as unknown as { args: { txId: `0x${string}` } };
-
-        return {
-            txId: log.args.txId,
-            txHash: hash,
-        };
     }
 
     // ─── Helpers ───────────────────────────────────────────────────

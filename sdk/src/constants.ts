@@ -152,6 +152,45 @@ export const PAYNGO_LINKS_ABI = [
             { name: "fee", type: "uint256", indexed: false },
         ],
     },
+    // Custom errors de PayNGoLinks.sol — sin estas declaraciones, viem no
+    // puede decodificar los reverts del contrato (queda como un selector
+    // hex sin resolver, ej. "0x946a237a") y rethrowAsPayNGoError() nunca
+    // encuentra el ContractFunctionRevertedError que necesita. Fix: v0.4.0.
+    {
+        type: "error",
+        name: "TokenNotSupported",
+        inputs: [{ name: "token", type: "address" }],
+    },
+    {
+        type: "error",
+        name: "LinkNotActive",
+        inputs: [{ name: "id", type: "uint256" }],
+    },
+    {
+        type: "error",
+        name: "LinkExpired",
+        inputs: [{ name: "id", type: "uint256" }],
+    },
+    {
+        type: "error",
+        name: "NotLinkCreator",
+        inputs: [{ name: "id", type: "uint256" }],
+    },
+    {
+        type: "error",
+        name: "InvalidAmount",
+        inputs: [],
+    },
+    {
+        type: "error",
+        name: "InvalidRecipient",
+        inputs: [],
+    },
+    {
+        type: "error",
+        name: "InvalidExpiry",
+        inputs: [],
+    },
 ] as const;
 
 export const PAYNGO_ROUTER_ABI = [
@@ -261,6 +300,55 @@ export const PAYNGO_ROUTER_ABI = [
         outputs: [{ name: "", type: "bool" }],
     },
 
+    // Custom errors de PayNGoRouter.sol. Fix: v0.4.0.
+    {
+        type: "error",
+        name: "TokenNotSupported",
+        inputs: [{ name: "token", type: "address" }],
+    },
+    {
+        type: "error",
+        name: "RouteNotFound",
+        inputs: [],
+    },
+    {
+        type: "error",
+        name: "RouteNotActive",
+        inputs: [{ name: "routeId", type: "uint256" }],
+    },
+    {
+        type: "error",
+        name: "SlippageExceeded",
+        inputs: [
+            { name: "amountOut", type: "uint256" },
+            { name: "minAmountOut", type: "uint256" },
+        ],
+    },
+    {
+        type: "error",
+        name: "DeadlineExpired",
+        inputs: [{ name: "deadline", type: "uint256" }],
+    },
+    {
+        type: "error",
+        name: "OrderAlreadyExecuted",
+        inputs: [{ name: "orderId", type: "bytes32" }],
+    },
+    {
+        type: "error",
+        name: "InvalidAmount",
+        inputs: [],
+    },
+    {
+        type: "error",
+        name: "InvalidRecipient",
+        inputs: [],
+    },
+    {
+        type: "error",
+        name: "InvalidDeadline",
+        inputs: [],
+    },
 ] as const;
 
 export const PAYNGO_GATEWAY_ABI = [
@@ -338,6 +426,58 @@ export const PAYNGO_GATEWAY_ABI = [
             { name: "gasUsed", type: "uint256", indexed: false },
             { name: "ethSponsored", type: "uint256", indexed: false },
             { name: "usdcCharged", type: "uint256", indexed: false },
+        ],
+    },
+    // Custom errors de PayNGoGateway.sol. Fix: v0.4.0.
+    {
+        type: "error",
+        name: "InsufficientDeposit",
+        inputs: [],
+    },
+    {
+        type: "error",
+        name: "UserBlacklisted",
+        inputs: [{ name: "user", type: "address" }],
+    },
+    {
+        type: "error",
+        name: "UserNotWhitelisted",
+        inputs: [{ name: "user", type: "address" }],
+    },
+    {
+        type: "error",
+        name: "GasPriceTooHigh",
+        inputs: [{ name: "gasPrice", type: "uint256" }],
+    },
+    {
+        type: "error",
+        name: "GasLimitExceeded",
+        inputs: [
+            { name: "gasUsed", type: "uint256" },
+            { name: "maxGas", type: "uint256" },
+        ],
+    },
+    {
+        type: "error",
+        name: "InvalidPolicy",
+        inputs: [],
+    },
+    {
+        type: "error",
+        name: "TransferFailed",
+        inputs: [],
+    },
+    {
+        type: "error",
+        name: "TxAlreadyProcessed",
+        inputs: [{ name: "txId", type: "bytes32" }],
+    },
+    {
+        type: "error",
+        name: "UnauthorizedCaller",
+        inputs: [
+            { name: "caller", type: "address" },
+            { name: "user", type: "address" },
         ],
     },
 ] as const;

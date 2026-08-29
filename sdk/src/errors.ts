@@ -18,4 +18,9 @@ export const ERRORS = {
     UNSUPPORTED_CHAIN: "UNSUPPORTED_CHAIN",
     ROUTE_NOT_FOUND: "ROUTE_NOT_FOUND",
     TX_FAILED: "TX_FAILED",
+    // Agregados en v0.3.9 — antes reusaban TX_FAILED, que no distinguía
+    // "la API tardó demasiado" de "la API respondió con un error real" ni
+    // de "la respuesta no se pudo interpretar como JSON".
+    AGENT_TIMEOUT: "AGENT_TIMEOUT",
+    PARSE_FAILED: "PARSE_FAILED",
 } as const;

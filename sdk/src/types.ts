@@ -150,7 +150,8 @@ export interface AgentPaymentSuggestion {
     riskLevel: "low" | "medium" | "high";
 }
 
-export interface PayNGoClientConfig extends PayNGoConfig {
-    pimlicoApiKey?: string;    // opcional — solo necesario para flujo gasless real
-    rpcUrl?: string;
-}
+// PayNGoClientConfig fue removido en v0.3.9 — declaraba pimlicoApiKey/rpcUrl
+// pero ningún módulo del SDK lo consumía; era un tipo exportado sin uso
+// real. Si necesitas configurar un flujo gasless real vía Pimlico, hazlo
+// directo con permissionless.js (ver README § GatewayModule) — el SDK no
+// envuelve ese flujo hoy.

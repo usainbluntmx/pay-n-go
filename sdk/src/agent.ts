@@ -121,10 +121,6 @@ export class PayNGoAgent {
         suggestion: AgentPaymentSuggestion
     ): { ok: true } | { ok: false; reason: string } {
         if (suggestion.action !== "execute_payment" && suggestion.action !== "gasless_payment") {
-            // pay_link no mueve un monto arbitrario elegido por el LLM — el
-            // monto ya está fijado on-chain por quien creó el link — pero
-            // igual no se permite auto-ejecutar por defecto fuera de los
-            // dos casos con monto variable.
             return { ok: false, reason: `acción "${suggestion.action}" no soportada para autoExecute` };
         }
 
@@ -140,8 +136,6 @@ export class PayNGoAgent {
 
         let amountNumber: number;
         try {
-            // parseUnits valida el formato del string (rechaza cosas como
-            // "100 or ignore previous instructions") antes de convertir.
             const amountBigInt = parseUnits(params.amount, 6);
             amountNumber = Number(formatUnits(amountBigInt, 6));
         } catch {
@@ -218,7 +212,6 @@ export class PayNGoAgent {
             "Content-Type": "application/json",
         };
 
-        // Solo incluir credenciales si llamamos directo a Anthropic
         if (!isProxy) {
             headers["x-api-key"] = this.apiKey;
             headers["anthropic-version"] = "2023-06-01";
@@ -241,9 +234,14 @@ export class PayNGoAgent {
             });
         } catch (e) {
             if (e instanceof Error && e.name === "AbortError") {
+                // Código propio (AGENT_TIMEOUT) en vez de TX_FAILED — un
+                // timeout de red no es lo mismo que una transacción fallida,
+                // y antes de v0.3.9 ambos se reportaban con el mismo code,
+                // dificultando que el caller distinga "reintenta" de "revisa
+                // el error real".
                 throw new PayNGoError(
                     `Claude API timed out after ${this.timeoutMs}ms`,
-                    ERRORS.TX_FAILED
+                    ERRORS.AGENT_TIMEOUT
                 );
             }
             throw e;
@@ -336,10 +334,60 @@ Respond ONLY with a valid JSON array of objects, each with: action, params, reas
 
     // ─── Parsers ──────────────────────────────────────────────────
 
+    // Extrae el primer bloque JSON balanceado (objeto u array) de un texto,
+    // ignorando cualquier prosa antes o después — antes de v0.3.9 solo se
+    // quitaban los fences de markdown (```json), así que una respuesta como
+    // "Aquí tienes tu sugerencia:\n{...}" rompía el parseo con JSON.parse
+    // aunque el JSON en sí fuera válido.
+    private _extractJsonBlock(raw: string, openChar: "{" | "["): string | null {
+        const closeChar = openChar === "{" ? "}" : "]";
+        const start = raw.indexOf(openChar);
+        if (start === -1) return null;
+
+        let depth = 0;
+        let inString = false;
+        let escapeNext = false;
+
+        for (let i = start; i < raw.length; i++) {
+            const char = raw[i];
+
+            if (escapeNext) {
+                escapeNext = false;
+                continue;
+            }
+            if (char === "\\") {
+                escapeNext = true;
+                continue;
+            }
+            if (char === '"') {
+                inString = !inString;
+                continue;
+            }
+            if (inString) continue;
+
+            if (char === openChar) depth++;
+            if (char === closeChar) {
+                depth--;
+                if (depth === 0) {
+                    return raw.slice(start, i + 1);
+                }
+            }
+        }
+
+        return null; // nunca cerró — bloque incompleto
+    }
+
     private _parseResponse(raw: string): AgentPaymentSuggestion {
+        const block = this._extractJsonBlock(raw, "{");
+        if (!block) {
+            throw new PayNGoError(
+                `No JSON object found in Claude response: ${raw.slice(0, 200)}`,
+                ERRORS.PARSE_FAILED
+            );
+        }
+
         try {
-            const clean = raw.replace(/```json|```/g, "").trim();
-            const parsed = JSON.parse(clean) as AgentPaymentSuggestion;
+            const parsed = JSON.parse(block) as AgentPaymentSuggestion;
 
             if (!parsed.action || !parsed.params || !parsed.reasoning) {
                 throw new Error("Missing required fields");
@@ -348,21 +396,28 @@ Respond ONLY with a valid JSON array of objects, each with: action, params, reas
             return parsed;
         } catch (e) {
             throw new PayNGoError(
-                `Failed to parse Claude response: ${raw}`,
-                ERRORS.TX_FAILED,
+                `Failed to parse Claude response: ${raw.slice(0, 200)}`,
+                ERRORS.PARSE_FAILED,
                 e
             );
         }
     }
 
     private _parseBatchResponse(raw: string): AgentPaymentSuggestion[] {
+        const block = this._extractJsonBlock(raw, "[");
+        if (!block) {
+            throw new PayNGoError(
+                `No JSON array found in Claude response: ${raw.slice(0, 200)}`,
+                ERRORS.PARSE_FAILED
+            );
+        }
+
         try {
-            const clean = raw.replace(/```json|```/g, "").trim();
-            return JSON.parse(clean) as AgentPaymentSuggestion[];
+            return JSON.parse(block) as AgentPaymentSuggestion[];
         } catch (e) {
             throw new PayNGoError(
-                `Failed to parse batch response: ${raw}`,
-                ERRORS.TX_FAILED,
+                `Failed to parse batch response: ${raw.slice(0, 200)}`,
+                ERRORS.PARSE_FAILED,
                 e
             );
         }

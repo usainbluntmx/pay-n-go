@@ -6,6 +6,7 @@ import {
     ExecutePaymentResult,
 } from "./types";
 import { PayNGoError, ERRORS } from "./errors";
+import { rethrowAsPayNGoError } from "./contractErrors";
 
 export class RouterModule {
     constructor(
@@ -70,12 +71,35 @@ export class RouterModule {
         const tokenOut = params.tokenOut ?? this.usdcAddress;
         const slippageBps = BigInt(params.slippageBps ?? 100);
         const deadlineSeconds = params.deadlineSeconds ?? 3600;
+        const requestedRouteId = params.routeId ?? 0n;
 
-        const { amountOut: expectedOut } = await this.getBestRoute(
-            tokenIn,
-            tokenOut,
-            params.amount
-        );
+        // Si el caller pidió una ruta específica (routeId !== 0), el
+        // amountOut esperado para calcular minAmountOut debe venir de ESA
+        // ruta — antes siempre se usaba getBestRoute(), así que si la ruta
+        // elegida tenía peor amountOut/fee que la mejor, el contrato
+        // revertía SlippageExceeded aunque el usuario la haya elegido a
+        // propósito. Fix: v0.3.8.
+        let expectedOut: bigint;
+        if (requestedRouteId !== 0n) {
+            const quotes = await this.getQuotes(tokenIn, tokenOut, params.amount);
+            const chosenQuote = quotes.find((q) => q.routeId === requestedRouteId);
+            if (!chosenQuote) {
+                throw new PayNGoError(
+                    `Route ${requestedRouteId} not found among available quotes for this pair/amount`,
+                    ERRORS.ROUTE_NOT_FOUND
+                );
+            }
+            if (!chosenQuote.available) {
+                throw new PayNGoError(
+                    `Route ${requestedRouteId} exists but is not available`,
+                    ERRORS.ROUTE_NOT_FOUND
+                );
+            }
+            expectedOut = chosenQuote.amountOut;
+        } else {
+            const best = await this.getBestRoute(tokenIn, tokenOut, params.amount);
+            expectedOut = best.amountOut;
+        }
 
         const minAmountOut = (expectedOut * (10_000n - slippageBps)) / 10_000n;
 
@@ -84,53 +108,60 @@ export class RouterModule {
 
         await this._ensureAllowance(account, tokenIn, this.routerAddress, params.amount);
 
-        const hash = await this.walletClient!.writeContract({
-            address: this.routerAddress,
-            abi: PAYNGO_ROUTER_ABI,
-            functionName: "executePayment",
-            args: [{
-                sender: account.address,
-                recipient: params.recipient,
-                tokenIn,
-                tokenOut,
-                amountIn: params.amount,
-                minAmountOut,
-                routeId: params.routeId ?? 0n,
-                deadline,
-                orderId: zeroHash,
-            }],
-            account,
-            chain: this.chain,
-        });
+        try {
+            const hash = await this.walletClient!.writeContract({
+                address: this.routerAddress,
+                abi: PAYNGO_ROUTER_ABI,
+                functionName: "executePayment",
+                args: [{
+                    sender: account.address,
+                    recipient: params.recipient,
+                    tokenIn,
+                    tokenOut,
+                    amountIn: params.amount,
+                    minAmountOut,
+                    routeId: requestedRouteId,
+                    deadline,
+                    orderId: zeroHash,
+                }],
+                account,
+                chain: this.chain,
+            });
 
-        const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+            const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
 
-        // Leer el orderId, amountOut y fee REALES del evento PaymentRouted —
-        // antes se devolvía receipt.transactionHash como "orderId" (no es
-        // el ID que genera el contrato) y fee/amountOut se recalculaban
-        // localmente con FEE_BPS=30 hardcodeado, ignorando cualquier
-        // feeBps adicional de la ruta usada. Fix: v0.3.5.
-        const logs = parseEventLogs({
-            abi: PAYNGO_ROUTER_ABI,
-            logs: receipt.logs,
-            eventName: "PaymentRouted",
-        });
+            // Leer el orderId, amountOut y fee REALES del evento PaymentRouted —
+            // antes se devolvía receipt.transactionHash como "orderId" (no es
+            // el ID que genera el contrato) y fee/amountOut se recalculaban
+            // localmente con FEE_BPS=30 hardcodeado, ignorando cualquier
+            // feeBps adicional de la ruta usada. Fix: v0.3.5.
+            const logs = parseEventLogs({
+                abi: PAYNGO_ROUTER_ABI,
+                logs: receipt.logs,
+                eventName: "PaymentRouted",
+            });
 
-        if (logs.length === 0) {
-            throw new PayNGoError("PaymentRouted event not found", ERRORS.TX_FAILED);
+            if (logs.length === 0) {
+                throw new PayNGoError("PaymentRouted event not found", ERRORS.TX_FAILED);
+            }
+
+            const log = logs[0] as unknown as {
+                args: { orderId: `0x${string}`; routeId: bigint; amountOut: bigint; fee: bigint };
+            };
+
+            return {
+                orderId: log.args.orderId,
+                txHash: hash,
+                amountOut: log.args.amountOut,
+                fee: log.args.fee,
+                routeId: log.args.routeId,
+            };
+        } catch (e) {
+            if (e instanceof PayNGoError) throw e;
+            // ej. SlippageExceeded, DeadlineExpired, RouteNotActive,
+            // OrderAlreadyExecuted. Fix: v0.3.9.
+            rethrowAsPayNGoError(e);
         }
-
-        const log = logs[0] as unknown as {
-            args: { orderId: `0x${string}`; routeId: bigint; amountOut: bigint; fee: bigint };
-        };
-
-        return {
-            orderId: log.args.orderId,
-            txHash: hash,
-            amountOut: log.args.amountOut,
-            fee: log.args.fee,
-            routeId: log.args.routeId,
-        };
     }
 
     // ─── Helpers ───────────────────────────────────────────────────
@@ -190,17 +221,21 @@ export class RouterModule {
         this._requireWallet();
         const account = this._getAccount();
 
-        const hash = await this.walletClient!.writeContract({
-            address: this.routerAddress,
-            abi: PAYNGO_ROUTER_ABI,
-            functionName: "setGaslessThreshold",
-            args: [threshold],
-            account,
-            chain: this.chain,
-        });
+        try {
+            const hash = await this.walletClient!.writeContract({
+                address: this.routerAddress,
+                abi: PAYNGO_ROUTER_ABI,
+                functionName: "setGaslessThreshold",
+                args: [threshold],
+                account,
+                chain: this.chain,
+            });
 
-        await this.publicClient.waitForTransactionReceipt({ hash });
-        return hash;
+            await this.publicClient.waitForTransactionReceipt({ hash });
+            return hash;
+        } catch (e) {
+            rethrowAsPayNGoError(e);
+        }
     }
 
 }

@@ -16,6 +16,7 @@ import {
     LinkStatus,
 } from "./types";
 import { PayNGoError, ERRORS } from "./errors";
+import { rethrowAsPayNGoError } from "./contractErrors";
 
 export class LinksModule {
     constructor(
@@ -49,6 +50,16 @@ export class LinksModule {
             paidAt: bigint;
             paidBy: Address;
         };
+
+        // El contrato no revierte para un linkId inexistente — devuelve un
+        // struct vacío (id=0, creator=address(0), status=Active/0). Sin
+        // esta validación, un id inexistente se ve como un link Active
+        // legítimo: isLinkPayable() reportaría true, y payLink() intentaría
+        // la transacción y fallaría con un error crudo de viem en vez de
+        // un PayNGoError claro. Fix: v0.3.8.
+        if (result.id === 0n && result.creator === "0x0000000000000000000000000000000000000000") {
+            throw new PayNGoError(`Link ${linkId} not found`, ERRORS.LINK_NOT_FOUND);
+        }
 
         return {
             id: result.id,
@@ -85,6 +96,14 @@ export class LinksModule {
         return [...ids];
     }
 
+    // NOTA: al igual que getLink(), el contrato no revierte para un linkId
+    // inexistente — isLinkPayable(idInexistente) devuelve `true` porque un
+    // struct vacío tiene status=Active(0) y expiresAt=0 (sin expiración).
+    // A diferencia de getLink(), esta función no tiene suficiente
+    // información (no trae `creator`) para distinguir "vacío" de "real" sin
+    // una llamada adicional — así que el comportamiento fantasma persiste
+    // si se llama aislado. Usa getLink() primero para validar existencia;
+    // payLink() ya lo hace internamente y por eso está protegido.
     async isLinkPayable(linkId: bigint): Promise<boolean> {
         return this.publicClient.readContract({
             address: this.linksAddress,
@@ -112,39 +131,52 @@ export class LinksModule {
         const expiresIn = BigInt(params.expiresIn ?? 0);
         const memo = params.memo ?? "";
 
-        const hash = await this.walletClient!.writeContract({
-            address: this.linksAddress,
-            abi: PAYNGO_LINKS_ABI,
-            functionName: "createLink",
-            args: [params.recipient, token, params.amount, expiresIn, memo],
-            account,
-            chain: this.chain,
-        });
+        try {
+            const hash = await this.walletClient!.writeContract({
+                address: this.linksAddress,
+                abi: PAYNGO_LINKS_ABI,
+                functionName: "createLink",
+                args: [params.recipient, token, params.amount, expiresIn, memo],
+                account,
+                chain: this.chain,
+            });
 
-        const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+            const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
 
-        const logs = parseEventLogs({
-            abi: PAYNGO_LINKS_ABI,
-            logs: receipt.logs,
-            eventName: "LinkCreated",
-        });
+            const logs = parseEventLogs({
+                abi: PAYNGO_LINKS_ABI,
+                logs: receipt.logs,
+                eventName: "LinkCreated",
+            });
 
-        if (logs.length === 0) {
-            throw new PayNGoError("LinkCreated event not found", ERRORS.TX_FAILED);
+            if (logs.length === 0) {
+                throw new PayNGoError("LinkCreated event not found", ERRORS.TX_FAILED);
+            }
+
+            const log = logs[0] as unknown as { args: { id: bigint } };
+
+            return {
+                linkId: log.args.id,
+                txHash: hash,
+            };
+        } catch (e) {
+            if (e instanceof PayNGoError) throw e;
+            // Intenta decodificar el revert contra los custom errors del
+            // contrato (ej. InvalidAmount, InvalidRecipient, InvalidExpiry,
+            // TokenNotSupported) — si no lo reconoce, relanza tal cual.
+            // Fix: v0.3.9.
+            rethrowAsPayNGoError(e);
         }
-
-        const log = logs[0] as unknown as { args: { id: bigint } };
-
-        return {
-            linkId: log.args.id,
-            txHash: hash,
-        };
     }
 
     async payLink(linkId: bigint): Promise<PayLinkResult> {
         this._requireWallet();
         const account = this._getAccount();
 
+        // getLink() ahora lanza PayNGoError(LINK_NOT_FOUND) si linkId no
+        // existe — antes de este fix, isLinkPayable() reportaba `true`
+        // para un id inexistente y la transacción fallaba con un error
+        // crudo de viem en vez de un error claro. Fix: v0.3.8.
         const link = await this.getLink(linkId);
 
         const payable = await this.isLinkPayable(linkId);
@@ -154,40 +186,68 @@ export class LinksModule {
 
         await this._ensureAllowance(account, this.linksAddress, link.amount);
 
-        const hash = await this.walletClient!.writeContract({
-            address: this.linksAddress,
-            abi: PAYNGO_LINKS_ABI,
-            functionName: "payLink",
-            args: [linkId],
-            account,
-            chain: this.chain,
-        });
+        try {
+            const hash = await this.walletClient!.writeContract({
+                address: this.linksAddress,
+                abi: PAYNGO_LINKS_ABI,
+                functionName: "payLink",
+                args: [linkId],
+                account,
+                chain: this.chain,
+            });
 
-        await this.publicClient.waitForTransactionReceipt({ hash });
+            const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
 
-        const fee = (link.amount * 50n) / 10_000n;
-        return {
-            txHash: hash,
-            amountPaid: link.amount,
-            fee,
-        };
+            // Leer el fee real del evento LinkPaid en vez de recalcularlo con
+            // FEE_BPS=50 hardcodeado — mismo patrón aplicado a Router/Gateway
+            // en v0.3.5. Fix: v0.3.8.
+            const logs = parseEventLogs({
+                abi: PAYNGO_LINKS_ABI,
+                logs: receipt.logs,
+                eventName: "LinkPaid",
+            });
+
+            if (logs.length === 0) {
+                throw new PayNGoError("LinkPaid event not found", ERRORS.TX_FAILED);
+            }
+
+            const log = logs[0] as unknown as { args: { amount: bigint; fee: bigint } };
+
+            return {
+                txHash: hash,
+                amountPaid: log.args.amount,
+                fee: log.args.fee,
+            };
+        } catch (e) {
+            if (e instanceof PayNGoError) throw e;
+            // ej. LinkNotActive, LinkExpired — puede ocurrir por una
+            // condición de carrera (el link cambió de estado entre
+            // isLinkPayable() y el envío de la tx). Fix: v0.3.9.
+            rethrowAsPayNGoError(e);
+        }
     }
 
     async cancelLink(linkId: bigint): Promise<string> {
         this._requireWallet();
         const account = this._getAccount();
 
-        const hash = await this.walletClient!.writeContract({
-            address: this.linksAddress,
-            abi: PAYNGO_LINKS_ABI,
-            functionName: "cancelLink",
-            args: [linkId],
-            account,
-            chain: this.chain,
-        });
+        try {
+            const hash = await this.walletClient!.writeContract({
+                address: this.linksAddress,
+                abi: PAYNGO_LINKS_ABI,
+                functionName: "cancelLink",
+                args: [linkId],
+                account,
+                chain: this.chain,
+            });
 
-        await this.publicClient.waitForTransactionReceipt({ hash });
-        return hash;
+            await this.publicClient.waitForTransactionReceipt({ hash });
+            return hash;
+        } catch (e) {
+            // ej. NotLinkCreator — si alguien que no creó el link intenta
+            // cancelarlo. Fix: v0.3.9.
+            rethrowAsPayNGoError(e);
+        }
     }
 
     // ─── Helpers ───────────────────────────────────────────────────

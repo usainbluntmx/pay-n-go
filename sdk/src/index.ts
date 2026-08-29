@@ -47,6 +47,7 @@ export {
 
 // Errores
 export { PayNGoError, ERRORS } from "./errors";
+export { rethrowAsPayNGoError } from "./contractErrors";
 
 // Nota: el gasless sponsorship vive en GatewayModule (client.gateway.*),
 // no como módulo separado. GaslessModule nunca se implementó y se
