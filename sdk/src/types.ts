@@ -140,6 +140,19 @@ export interface GasCostEstimate {
     isFree: boolean;
 }
 
+// Agregado en v0.4.3 — combina whitelistOnly + whitelistedUsers +
+// blacklistedUsers en una sola llamada de conveniencia, para que un dev
+// pueda verificar de antemano si executeGaslessPayment() va a revertir
+// por UserNotWhitelisted/UserBlacklisted antes de intentarlo.
+export interface GaslessEligibility {
+    // Si el usuario puede usar executeGaslessPayment() hoy, considerando
+    // whitelistOnly + whitelistedUsers + blacklistedUsers juntos.
+    eligible: boolean;
+    whitelistOnly: boolean;
+    isWhitelisted: boolean;
+    isBlacklisted: boolean;
+}
+
 // ─── AI Agent ─────────────────────────────────────────────────────
 
 export interface AgentPaymentSuggestion {

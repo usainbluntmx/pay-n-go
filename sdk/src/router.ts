@@ -130,32 +130,59 @@ export class RouterModule {
 
             const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
 
-            // Leer el orderId, amountOut y fee REALES del evento PaymentRouted —
-            // antes se devolvía receipt.transactionHash como "orderId" (no es
-            // el ID que genera el contrato) y fee/amountOut se recalculaban
-            // localmente con FEE_BPS=30 hardcodeado, ignorando cualquier
-            // feeBps adicional de la ruta usada. Fix: v0.3.5.
-            const logs = parseEventLogs({
+            // PayNGoRouter.sol puede emitir uno de DOS eventos según decida
+            // rutear directo o vía el Gateway (gasless, cuando el gateway
+            // tiene ETH y el monto < gaslessThreshold): PaymentRouted o
+            // GaslessPaymentRouted. Antes de v0.4.3 solo se parseaba el
+            // primero — un pago elegible para gasless fallaba con
+            // "PaymentRouted event not found" pese a ejecutarse
+            // correctamente on-chain, y un reintento del caller chocaba con
+            // OrderAlreadyExecuted, pareciendo un fallo del protocolo.
+            // routeId no existe en GaslessPaymentRouted — se reporta como
+            // 0n en ese caso (el gasto no pasó por ninguna ruta del
+            // registro de rutas).
+            const directLogs = parseEventLogs({
                 abi: PAYNGO_ROUTER_ABI,
                 logs: receipt.logs,
                 eventName: "PaymentRouted",
             });
 
-            if (logs.length === 0) {
-                throw new PayNGoError("PaymentRouted event not found", ERRORS.TX_FAILED);
+            if (directLogs.length > 0) {
+                const log = directLogs[0] as unknown as {
+                    args: { orderId: `0x${string}`; routeId: bigint; amountOut: bigint; fee: bigint };
+                };
+                return {
+                    orderId: log.args.orderId,
+                    txHash: hash,
+                    amountOut: log.args.amountOut,
+                    fee: log.args.fee,
+                    routeId: log.args.routeId,
+                };
             }
 
-            const log = logs[0] as unknown as {
-                args: { orderId: `0x${string}`; routeId: bigint; amountOut: bigint; fee: bigint };
-            };
+            const gaslessLogs = parseEventLogs({
+                abi: PAYNGO_ROUTER_ABI,
+                logs: receipt.logs,
+                eventName: "GaslessPaymentRouted",
+            });
 
-            return {
-                orderId: log.args.orderId,
-                txHash: hash,
-                amountOut: log.args.amountOut,
-                fee: log.args.fee,
-                routeId: log.args.routeId,
-            };
+            if (gaslessLogs.length > 0) {
+                const log = gaslessLogs[0] as unknown as {
+                    args: { txId: `0x${string}`; amountOut: bigint; fee: bigint };
+                };
+                return {
+                    orderId: log.args.txId,
+                    txHash: hash,
+                    amountOut: log.args.amountOut,
+                    fee: log.args.fee,
+                    routeId: 0n, // GaslessPaymentRouted no pasa por el registro de rutas
+                };
+            }
+
+            throw new PayNGoError(
+                "Neither PaymentRouted nor GaslessPaymentRouted event found",
+                ERRORS.TX_FAILED
+            );
         } catch (e) {
             if (e instanceof PayNGoError) throw e;
             // ej. SlippageExceeded, DeadlineExpired, RouteNotActive,

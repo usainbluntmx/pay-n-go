@@ -1,6 +1,6 @@
 {
     "name": "@zero-two-labs/payngo",
-    "version": "0.4.2",
+    "version": "0.4.3",
     "description": "SDK for Pay'n Go — stablecoin payment links, routing, and gasless sponsorship on Ethereum Sepolia",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
@@ -12,10 +12,14 @@
     },
     "scripts": {
         "build": "tsc",
+        "prepublishOnly": "npm run build && npm test",
         "test": "jest",
         "test:integration": "tsx test/integration/sdk.integration.ts",
         "dev": "tsc --watch",
         "demo": "ts-node src/agent-demo.ts"
+    },
+    "engines": {
+        "node": ">=18"
     },
     "keywords": [
         "ethereum",
@@ -27,11 +31,11 @@
     ],
     "repository": {
         "type": "git",
-        "url": "https://github.com/usainbluntmx/pay-n-go.git",
+        "url": "git+https://github.com/usainbluntmx/pay-n-go.git",
         "directory": "sdk"
     },
     "license": "MIT",
-    "dependencies": {
+    "peerDependencies": {
         "viem": "^2.0.0"
     },
     "devDependencies": {
@@ -42,6 +46,7 @@
         "ts-jest": "^29.0.0",
         "ts-node": "^10.0.0",
         "tsx": "^4.7.0",
-        "typescript": "^5.0.0"
+        "typescript": "^5.0.0",
+        "viem": "^2.0.0"
     }
 }

@@ -5,6 +5,7 @@ import {
     GaslessPaymentParams,
     GaslessPaymentResult,
     GasCostEstimate,
+    GaslessEligibility,
     SponsorMode,
 } from "./types";
 import { PayNGoError, ERRORS } from "./errors";
@@ -75,6 +76,37 @@ export class GatewayModule {
             abi: PAYNGO_GATEWAY_ABI,
             functionName: "getUsdcBalance",
         }) as Promise<bigint>;
+    }
+
+    // Verifica de antemano si executeGaslessPayment() va a revertir por
+    // UserNotWhitelisted o UserBlacklisted — antes de v0.4.3 no había forma
+    // de saberlo sin intentar la transacción y recibir un revert "misterioso".
+    // Nota: whitelistOnly es un flag GLOBAL del contrato — la whitelist
+    // individual solo importa mientras ese flag esté activo.
+    async getGaslessEligibility(user: Address): Promise<GaslessEligibility> {
+        const [whitelistOnly, isWhitelisted, isBlacklisted] = await Promise.all([
+            this.publicClient.readContract({
+                address: this.gatewayAddress,
+                abi: PAYNGO_GATEWAY_ABI,
+                functionName: "whitelistOnly",
+            }) as Promise<boolean>,
+            this.publicClient.readContract({
+                address: this.gatewayAddress,
+                abi: PAYNGO_GATEWAY_ABI,
+                functionName: "whitelistedUsers",
+                args: [user],
+            }) as Promise<boolean>,
+            this.publicClient.readContract({
+                address: this.gatewayAddress,
+                abi: PAYNGO_GATEWAY_ABI,
+                functionName: "blacklistedUsers",
+                args: [user],
+            }) as Promise<boolean>,
+        ]);
+
+        const eligible = !isBlacklisted && (!whitelistOnly || isWhitelisted);
+
+        return { eligible, whitelistOnly, isWhitelisted, isBlacklisted };
     }
 
     // ─── Write ─────────────────────────────────────────────────────

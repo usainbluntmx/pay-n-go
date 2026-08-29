@@ -277,6 +277,24 @@ export const PAYNGO_ROUTER_ABI = [
             { name: "fee", type: "uint256", indexed: false },
         ],
     },
+    // Emitido en vez de PaymentRouted cuando executePayment() decide
+    // enrutar vía el Gateway (gasless) en vez del Router directo — ver
+    // PayNGoRouter.sol. Antes de v0.4.3, executePayment() solo parseaba
+    // PaymentRouted, así que un pago elegible para gasless (gateway con
+    // ETH + monto < gaslessThreshold) fallaba con "PaymentRouted event
+    // not found" pese a que la transacción sí se ejecutó correctamente.
+    {
+        type: "event",
+        name: "GaslessPaymentRouted",
+        inputs: [
+            { name: "txId", type: "bytes32", indexed: true },
+            { name: "sender", type: "address", indexed: true },
+            { name: "recipient", type: "address", indexed: true },
+            { name: "amountIn", type: "uint256", indexed: false },
+            { name: "amountOut", type: "uint256", indexed: false },
+            { name: "fee", type: "uint256", indexed: false },
+        ],
+    },
 
     {
         type: "function",
@@ -416,6 +434,33 @@ export const PAYNGO_GATEWAY_ABI = [
         stateMutability: "view",
         inputs: [],
         outputs: [{ name: "", type: "uint256" }],
+    },
+    // Getters generados automáticamente por Solidity para las variables
+    // públicas whitelistOnly/whitelistedUsers/blacklistedUsers — antes no
+    // estaban en el ABI, así que un dev que llamara executeGaslessPayment()
+    // sin saber que whitelistOnly=true y su address no está en la
+    // whitelist recibía un revert "misterioso" (UserNotWhitelisted) sin
+    // ninguna forma de verificar la causa de antemano. Fix: v0.4.3.
+    {
+        type: "function",
+        name: "whitelistOnly",
+        stateMutability: "view",
+        inputs: [],
+        outputs: [{ name: "", type: "bool" }],
+    },
+    {
+        type: "function",
+        name: "whitelistedUsers",
+        stateMutability: "view",
+        inputs: [{ name: "", type: "address" }],
+        outputs: [{ name: "", type: "bool" }],
+    },
+    {
+        type: "function",
+        name: "blacklistedUsers",
+        stateMutability: "view",
+        inputs: [{ name: "", type: "address" }],
+        outputs: [{ name: "", type: "bool" }],
     },
     {
         type: "event",

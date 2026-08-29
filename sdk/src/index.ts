@@ -26,6 +26,7 @@ export type {
     GaslessPaymentParams,
     GaslessPaymentResult,
     GasCostEstimate,
+    GaslessEligibility,
     AgentPaymentSuggestion,
 } from "./types";
 

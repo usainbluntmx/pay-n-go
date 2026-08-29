@@ -10,6 +10,13 @@ Construido sobre [viem](https://viem.sh). Funciona en Node.js y en el navegador.
 
 ## Changelog
 
+### 0.4.3
+- **Fix:** `RouterModule.executePayment()` solo parseaba el evento `PaymentRouted` — pero `PayNGoRouter.sol` puede rutear internamente vía el Gateway (gasless) cuando es elegible (gateway con ETH + monto bajo `gaslessThreshold`), emitiendo `GaslessPaymentRouted` en su lugar. Un pago gasless-elegible fallaba con `"PaymentRouted event not found"` pese a ejecutarse correctamente on-chain — y un reintento del caller chocaba con `OrderAlreadyExecuted`, aparentando un fallo del protocolo. Ahora se intentan ambos eventos.
+- Agregado `GatewayModule.getGaslessEligibility(user)` — combina `whitelistOnly` + `whitelistedUsers` + `blacklistedUsers` (variables públicas del contrato, sin getter de conveniencia hasta ahora) en una sola llamada, para verificar de antemano si `executeGaslessPayment()` va a revertir por `UserNotWhitelisted`/`UserBlacklisted` antes de intentarlo.
+- `viem` movido de `dependencies` a `peerDependencies` — ataca la causa de raíz del dual-package hazard de v0.4.1/0.4.2 (que se mitigó con duck typing): con `viem` como dependencia directa, un consumidor puede terminar con dos instalaciones/instancias del módulo. Como `peerDependency`, el SDK usa la misma instalación que el proyecto que lo consume.
+- Agregado `prepublishOnly` (corre build + test antes de cualquier `npm publish`) y `engines.node: ">=18"` (el SDK usa `fetch` global sin polyfill en `PayNGoAgent`).
+- Corregida una línea desactualizada en "Estado y limitaciones conocidas" que aún decía que `LinksModule.payLink()` calculaba la fee localmente — quedó así por error tras el fix real en v0.3.8.
+
 ### 0.4.2
 - **Fix crítico:** los custom errors del contrato (`LinkNotActive`, `SlippageExceeded`, `UnauthorizedCaller`, etc.), aunque agregados al ABI en v0.4.0, no lograban mapearse a `PayNGoError` cuando el SDK (compilado a CommonJS) se consumía desde un proyecto ESM — un "dual package hazard": Node puede cargar dos instancias de módulo distintas de `viem` en ese escenario, y las comprobaciones `instanceof BaseError`/`instanceof ContractFunctionRevertedError` fallaban silenciosamente contra el error real (construido con la instancia de clases del contexto ESM del caller). `rethrowAsPayNGoError` ahora detecta el error decodificable únicamente por forma (duck typing — presencia de un método `.walk()` invocable y de `data.errorName`), sin ningún `instanceof` contra clases de viem, inmune a en qué contexto de módulo se haya construido el error originalmente. Verificado contra una transacción real revertida en Sepolia (`LinkNotActive`) tanto en CJS como en un consumidor ESM.
 
@@ -409,12 +416,14 @@ El test de integración (`test/integration/sdk.integration.ts`) ejecuta transacc
 ## Estado y limitaciones conocidas
 
 - **Verificado end-to-end** contra Ethereum Sepolia real: instanciación, lecturas de los 3 módulos, el flujo completo de escritura `createLink → getLink → isLinkPayable → payLink → getLink (Paid)`, y `executePayment()` con verificación independiente de que `orderId`/`amountOut`/`fee` coinciden con el evento on-chain — todo con una wallet real y fondos reales.
-- `LinksModule.payLink()` sigue calculando `fee` localmente (0.5% — `amount * 50n / 10_000n`), no la lee del evento `LinkPaid`. En la práctica coincide con la fee real de `PayNGoLinks.sol`, pero puede desincronizarse si el contrato cambia. `RouterModule.executePayment()` y `GatewayModule.executeGaslessPayment()` ya leen sus valores directamente del evento (desde v0.3.5).
+- `LinksModule.payLink()`, `RouterModule.executePayment()` y `GatewayModule.executeGaslessPayment()` leen `fee`/`amountPaid`/`amountOut` directamente de los eventos del contrato (`LinkPaid` desde v0.3.8, `PaymentRouted`/`GasSponsored` desde v0.3.5) — ninguno recalcula localmente.
 - `GatewayModule` implementa el sponsorship en USDC de `PayNGoGateway.sol`, distinto del gasless ERC-4337 real (Pimlico) que usa el frontend de Pay'n Go en producción.
 - Solo Ethereum Sepolia tiene el stack completo de contratos desplegado. Arbitrum Sepolia (MXNB) solo expone la dirección del token vía `TOKEN_ADDRESSES`.
 - `PayNGoAgent.autoExecute` ahora valida `amount`/`recipient` de forma programática, independiente del `riskLevel` del LLM (desde v0.3.6). Sigue siendo ejecución sin confirmación humana — revisa `suggestion` manualmente cuando sea posible.
 - `getLink()`, `payLink()` y `executePayment()` con `routeId` explícito fueron corregidos en v0.3.8 tras una segunda revisión de seguridad — ver Changelog. Todos verificados contra Ethereum Sepolia real antes de publicar.
-- Tests: 28 unitarios (`npm test`, sin red) + 16 de integración end-to-end contra Sepolia real (`npm run test:integration`, requiere wallet fondeada). Ver [Tests](#tests).
+- `RouterModule.executePayment()` decodifica tanto `PaymentRouted` como `GaslessPaymentRouted` (desde v0.4.3) — el Router puede enrutar vía el Gateway internamente cuando es elegible para gasless, y antes solo se parseaba el primer evento.
+- `viem` es una `peerDependency` (desde v0.4.3), no una dependencia directa — evita que el SDK y tu proyecto carguen instancias de módulo distintas de viem (la causa raíz del bug de v0.4.1/0.4.2).
+- Tests: 37 unitarios (`npm test`, sin red) + 16 de integración end-to-end contra Sepolia real (`npm run test:integration`, requiere wallet fondeada). Ver [Tests](#tests).
 
 ---
 
